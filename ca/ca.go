@@ -2,13 +2,17 @@ package ca
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
+	"crypto/wrap"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -25,6 +29,7 @@ import (
 const (
 	rootCAPrefix          = "Pebble Root CA "
 	intermediateCAPrefix  = "Pebble Intermediate CA "
+	interWrappedCAPrefix  = "Pebble Wrapped CA "
 	defaultValidityPeriod = 157766400
 )
 
@@ -41,6 +46,7 @@ type CAImpl struct {
 type chain struct {
 	root          *issuer
 	intermediates []*issuer
+	wrapped       []*issuer
 }
 
 func (c *chain) String() string {
@@ -186,6 +192,78 @@ func (ca *CAImpl) makeRootCert(
 	}
 	return newCert, nil
 }
+func (ca *CAImpl) makeWrappedCert(
+	subjectKey crypto.Signer,
+	subject pkix.Name,
+	subjectKeyID []byte,
+	signer *issuer,
+	certPSK []byte) (*core.Certificate, error) {
+
+	serial := makeSerial()
+	template := &x509.Certificate{
+		Subject:      subject,
+		SerialNumber: serial,
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().AddDate(30, 0, 0),
+
+		KeyUsage:              x509.KeyUsageCertSign,
+		SubjectKeyId:          subjectKeyID,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}	
+	
+	signerKey := signer.key
+	parent := signer.cert.Cert
+
+	subjectPk := subjectKey.Public()	
+	
+	subjectECDSAPk, ok := subjectPk.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, errors.New("wrapped issuer key must be an ECDSA key")
+	}
+
+	// Cifra a chave pública
+	pk, err := x509.MarshalPKIXPublicKey(subjectKey.Public())
+	if err != nil {
+		return nil, err
+	}
+
+	wrapped, _, err := wrap.AES256Encrypt(pk, certPSK)
+	if err != nil {
+		return nil, err
+	}
+
+	wrapPub := new(wrap.PublicKey)
+	wrapPub.WrappedPk = wrapped
+	wrapPub.ClassicAlgorithm = subjectECDSAPk.Curve
+
+	der, err := x509.CreateCertificate(rand.Reader, template, parent, wrapPub, signerKey)
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, err
+	}
+
+	hexSerial := hex.EncodeToString(cert.SerialNumber.Bytes())
+	newCert := &core.Certificate{
+		ID:   hexSerial,
+		Cert: cert,
+		DER:  der,
+	}
+	
+	newCert.IssuerChains = make([][]*core.Certificate, 1)
+	newCert.IssuerChains[0] = []*core.Certificate{signer.cert}
+	
+	_, err = ca.db.AddCertificate(newCert)
+	if err != nil {
+		return nil, err
+	}
+	return newCert, nil
+}
+
 
 func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	// Make a root private key
@@ -218,6 +296,21 @@ func (ca *CAImpl) newIntermediateIssuer(root *issuer, intermediateKey crypto.Sig
 	}
 	// Make an intermediate certificate with the root issuer
 	ic, err := ca.makeRootCert(intermediateKey, subject, subjectKeyID, root)
+	if err != nil {
+		return nil, err
+	}
+	ca.log.Printf("Generated new intermediate issuer %s with serial %s and SKI %x\n", ic.Cert.Subject, ic.ID, subjectKeyID)
+	return &issuer{
+		key:  intermediateKey,
+		cert: ic,
+	}, nil
+}
+func (ca *CAImpl) newWrappedIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte, psk []byte) (*issuer, error) {
+	if root == nil {
+		return nil, fmt.Errorf("Internal error: root must not be nil")
+	}
+	// Make an intermediate certificate with the root issuer
+	ic, err := ca.makeWrappedCert(intermediateKey, subject, subjectKeyID, root, psk)
 	if err != nil {
 		return nil, err
 	}
@@ -269,9 +362,12 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 	}
 	intermediates[0] = intermediate
 
+	wrappeds := make([]*issuer, 0)
+
 	c := &chain{
 		root:          root,
 		intermediates: intermediates,
+		wrapped:       wrappeds,
 	}
 	ca.log.Printf("Generated issuance chain: %s", c)
 
@@ -288,7 +384,13 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 		return nil, fmt.Errorf("must specify at least one domain name or IP address")
 	}
 
-	defaultChain := ca.chains[0].intermediates
+	var defaultChain []*issuer
+	if _, ok := key.(*wrap.PublicKey); ok {
+		defaultChain = ca.chains[0].wrapped
+	} else {
+		defaultChain = ca.chains[0].intermediates
+	}
+
 	if len(defaultChain) == 0 || defaultChain[0].cert == nil {
 		return nil, fmt.Errorf("cannot sign certificate - nil issuer")
 	}
@@ -352,9 +454,16 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 
 	issuers := make([][]*core.Certificate, len(ca.chains))
 	for i := 0; i < len(ca.chains); i++ {
-		issuerChain := make([]*core.Certificate, len(ca.chains[i].intermediates))
-		for j, cert := range ca.chains[i].intermediates {
+		issuerChain := make([]*core.Certificate, len(ca.chains[i].wrapped) + len(ca.chains[i].intermediates))
+
+		for j, cert := range ca.chains[i].wrapped {
 			issuerChain[j] = cert.cert
+		}
+
+		wrappedChainLen := len(ca.chains[i].wrapped)
+
+		for j, cert := range ca.chains[i].intermediates {
+			issuerChain[wrappedChainLen + j] = cert.cert
 		}
 		issuers[i] = issuerChain
 	}
@@ -436,6 +545,17 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 
 	// issue a certificate for the csr
 	csr := order.ParsedCSR
+
+	if csr.PublicKeyAlgorithm == x509.AES256ECDSA {
+		// Get cert psk 
+		certPSK := x509.GetCertPSK(csr)
+
+		// Generate a new wrapped Issuer
+		chain := ca.getChain(0)
+		ca.GenWrappedIssuer(chain, certPSK)
+		ca.log.Printf("%v", ca.chains[0].wrapped[0].cert.Cert.PublicKeyAlgorithm.String())
+	}
+	
 	cert, err := ca.newCertificate(csr.DNSNames, csr.IPAddresses, csr.PublicKey, order.AccountID, order.NotBefore, order.NotAfter)
 	if err != nil {
 		ca.log.Printf("Error: unable to issue order: %s", err.Error())
@@ -502,4 +622,39 @@ func (ca *CAImpl) GetIntermediateKey(no int) *rsa.PrivateKey {
 		return key
 	}
 	return nil
+}
+
+// Adds new wrapped issuer in the chain identified by `c`.
+func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte) {
+
+	chainID := hex.EncodeToString(makeSerial().Bytes()[:3])
+	parent := c.intermediates[0]
+	// sigScheme := c.sigSchemeWrap
+
+	// k, ski, err := makeKey()
+	k, ski, err := makeECDSAKey(3)
+
+	if err != nil {
+		panic(fmt.Sprintf("Error creating new wrapped issuer: %v", err))
+	}
+
+	wrapped, err := ca.newWrappedIssuer(parent, k, pkix.Name{
+		CommonName: fmt.Sprintf("%s%v", interWrappedCAPrefix, chainID),
+	}, ski, psk)
+	if err != nil {
+		panic(fmt.Sprintf("Error creating new intermediate issuer: %s", err.Error()))
+	}
+
+	c.wrapped = append(c.wrapped, wrapped)
+
+	n := len(c.wrapped)
+	names := make([]string, n)
+	for i := range c.wrapped {
+		names[n-i-1] = c.wrapped[i].cert.Cert.Subject.CommonName
+	}
+	w := strings.Join(names, ", ")
+
+	ca.log.Printf("Generated issuance chain: %s", c)
+	ca.log.Printf("%s issue: %s", parent.cert.Cert.Subject.CommonName, w)
+
 }
