@@ -46,6 +46,11 @@ func main() {
 		"dnsserver",
 		"",
 		"Define a custom DNS server address (ex: 192.168.0.56:5053 or 8.8.8.8:53).")
+	dirToSaveRoot := flag.String(
+			"rootdir",
+			"",
+			"Path to the directory where the Pebble Root CA certificate will be written/saved")
+
 	flag.Parse()
 	if *configFile == "" {
 		flag.Usage()
@@ -72,7 +77,7 @@ func main() {
 	}
 
 	db := db.NewMemoryStore()
-	ca := ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod)
+	ca := ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot)
 	va := va.New(logger, c.Pebble.HTTPPort, c.Pebble.TLSPort, *strictMode, *resolverAddress)
 
 	for keyID, key := range c.Pebble.ExternalAccountMACKeys {

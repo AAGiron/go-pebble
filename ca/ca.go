@@ -12,12 +12,14 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log"
 	"math"
 	"math/big"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -324,7 +326,7 @@ func (ca *CAImpl) newWrappedIssuer(root *issuer, intermediateKey crypto.Signer, 
 // newChain generates a new issuance chain, including a root certificate and numIntermediates intermediates (at least 1).
 // The first intermediate will use intermediateKey, intermediateSubject and subjectKeyId.
 // Any intermediates between the first intermediate and the root will have their keys and subjects generated automatically.
-func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pkix.Name, subjectKeyID []byte, numIntermediates int) *chain {
+func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pkix.Name, subjectKeyID []byte, numIntermediates int, dirToSaveRoot string) *chain {
 	if numIntermediates <= 0 {
 		panic("At least one intermediate must be present in the certificate chain")
 	}
@@ -335,6 +337,19 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 	if err != nil {
 		panic(fmt.Sprintf("Error creating new root issuer: %s", err.Error()))
 	}
+
+	if dirToSaveRoot != "" {
+		certOut, err := os.Create(dirToSaveRoot + "/root_ca_pebble.pem")
+		if err != nil {
+			log.Fatalf("Failed to open cert.pem for writing: %v", err)
+		}
+		if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: root.cert.DER}); err != nil {
+			log.Fatalf("Failed to write data to cert.pem: %v", err)
+		}
+		if err := certOut.Close(); err != nil {
+			log.Fatalf("Error closing cert.pem: %v", err)
+		}	
+	}	
 
 	// The last N-1 intermediates build a path from the root to the leaf signing certificate.
 	// If numIntermediates is only 1, then no intermediates will be generated here.
@@ -483,7 +498,7 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 	return newCert, nil
 }
 
-func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternateRoots int, chainLength int, certificateValidityPeriod uint) *CAImpl {
+func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternateRoots int, chainLength int, certificateValidityPeriod uint, dirToSaveRoot string) *CAImpl {
 	ca := &CAImpl{
 		log:                log,
 		db:                 db,
@@ -507,7 +522,7 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 	}
 	ca.chains = make([]*chain, 1+alternateRoots)
 	for i := 0; i < len(ca.chains); i++ {
-		ca.chains[i] = ca.newChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength)
+		ca.chains[i] = ca.newChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot)
 	}
 
 	if certificateValidityPeriod != 0 && certificateValidityPeriod < 9223372038 {
@@ -556,7 +571,7 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 		if !ok {
 			panic("Wrapped CSR signature is not valid")
 		}
-		
+
 		// Get cert psk 
 		certPSK := x509.GetCertPSK(csr)
 
