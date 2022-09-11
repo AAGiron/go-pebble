@@ -106,6 +106,30 @@ func makeKey() (*rsa.PrivateKey, []byte, error) {
 	return key, ski, nil
 }
 
+func makeECDSAKey(securityLevel int) (*ecdsa.PrivateKey, []byte, error) {
+	var curve elliptic.Curve
+	switch securityLevel {
+	case 1:
+		curve = elliptic.P256()
+	case 3:
+		curve = elliptic.P384()
+	case 5:
+		curve = elliptic.P521()
+	}
+
+	key, err := ecdsa.GenerateKey(curve, rand.Reader)
+	if err != nil {
+		log.Fatalf("Failed to generate private key: %v", err)
+	}
+
+	ski, err := makeSubjectKeyID(key.Public())
+	if err != nil {
+		return nil, nil, err
+	}
+	return key, ski, nil
+}
+
+
 func (ca *CAImpl) makeRootCert(
 	subjectKey crypto.Signer,
 	subject pkix.Name,
@@ -165,7 +189,10 @@ func (ca *CAImpl) makeRootCert(
 
 func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	// Make a root private key
-	rk, subjectKeyID, err := makeKey()
+	
+	// rk, subjectKeyID, err := makeKey()
+	rk, subjectKeyID, err := makeECDSAKey(5)
+
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +389,10 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 	intermediateSubject := pkix.Name{
 		CommonName: intermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
 	}
-	intermediateKey, subjectKeyID, err := makeKey()
+	
+	// intermediateKey, subjectKeyID, err := makeKey()
+	intermediateKey, subjectKeyID, err := makeECDSAKey(3)
+
 	if err != nil {
 		panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
 	}
