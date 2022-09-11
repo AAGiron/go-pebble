@@ -547,6 +547,16 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 	csr := order.ParsedCSR
 
 	if csr.PublicKeyAlgorithm == x509.AES256ECDSA {
+
+		ok, err := x509.VerifyWrappedCSRSignature(csr)
+		if err != nil {
+			panic(err)
+		}
+		
+		if !ok {
+			panic("Wrapped CSR signature is not valid")
+		}
+		
 		// Get cert psk 
 		certPSK := x509.GetCertPSK(csr)
 
