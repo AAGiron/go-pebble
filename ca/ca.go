@@ -224,13 +224,14 @@ func (ca *CAImpl) makeWrappedCert(
 		return nil, errors.New("wrapped issuer key must be an ECDSA key")
 	}
 
-	// Cifra a chave pública
-	pk, err := x509.MarshalPKIXPublicKey(subjectKey.Public())
-	if err != nil {
-		return nil, err
-	}
+	pk := elliptic.Marshal(subjectECDSAPk.Curve, subjectECDSAPk.X, subjectECDSAPk.Y)
+	
+	// pk, err := x509.MarshalPKIXPublicKey(subjectKey.Public())
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	wrapped, _, err := wrap.AES256Encrypt(pk, certPSK)
+	wrapped, err := wrap.WrapPublicKey(pk, certPSK)
 	if err != nil {
 		return nil, err
 	}
