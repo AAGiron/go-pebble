@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"log"
 	"net/http"
@@ -47,9 +48,17 @@ func main() {
 		"",
 		"Define a custom DNS server address (ex: 192.168.0.56:5053 or 8.8.8.8:53).")
 	dirToSaveRoot := flag.String(
-			"rootdir",
-			"",
-			"Path to the directory where the Pebble Root CA certificate will be written/saved")
+		"rootdir",
+		"",
+		"Path to the directory where the Pebble Root CA certificate will be written/saved")
+	kex := flag.String(
+		"kex",
+		"",
+		"Set the KEX algorithm to be used in the TLS connection")
+	pqtls := flag.Bool(
+		"pqtls",
+		false,
+		"By setting this flag to true, the ACME Server will launch a PQTLS server")
 
 	flag.Parse()
 	if *configFile == "" {
@@ -117,10 +126,32 @@ func main() {
 	logger.Printf("Listening on: %s\n", c.Pebble.ListenAddress)
 	logger.Printf("ACME directory available at: https://%s%s",
 		c.Pebble.ListenAddress, wfe.DirectoryPath)
-	err = http.ListenAndServeTLS(
-		c.Pebble.ListenAddress,
-		c.Pebble.Certificate,
-		c.Pebble.PrivateKey,
-		muxHandler)
+	
+	if *pqtls {
+		tlsCfg := &tls.Config {
+			PQTLSEnabled: true,			
+			IgnoreSigAlg: true,
+		}
+		curveID := tls.StringToCurveIDMap[*kex]
+		if curveID != tls.CurveID(0) {
+			tlsCfg.CurvePreferences = []tls.CurveID{curveID}
+		}
+		
+		err = http.ListenAndServeTLSWithConfig(
+			c.Pebble.ListenAddress,
+			c.Pebble.Certificate,
+			c.Pebble.PrivateKey,
+			muxHandler,
+			tlsCfg,
+		)
+	} else {
+		err = http.ListenAndServeTLS(
+			c.Pebble.ListenAddress,
+			c.Pebble.Certificate,
+			c.Pebble.PrivateKey,
+			muxHandler,
+		)
+	}
+	
 	cmd.FailOnError(err, "Calling ListenAndServeTLS()")
 }
