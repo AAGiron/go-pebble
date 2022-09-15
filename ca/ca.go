@@ -564,6 +564,8 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 
 	if csr.PublicKeyAlgorithm == x509.AES256ECDSA {
 
+		fmt.Printf("\nPebble: Received a CSR with a wrapped public key. Unwrapping the public key and verifying the CSR signature\n\n")
+
 		ok, err := x509.VerifyWrappedCSRSignature(csr)
 		if err != nil {
 			panic(err)
@@ -573,13 +575,14 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 			panic("Wrapped CSR signature is not valid")
 		}
 
+		fmt.Printf("Pebble: Wrapped CSR signature is valid.\n\nGenerating a new Issuer CA with a wrapped certificate\n\n")
+
 		// Get cert psk 
 		certPSK := x509.GetCertPSK(csr)
 
 		// Generate a new wrapped Issuer
 		chain := ca.getChain(0)
 		ca.GenWrappedIssuer(chain, certPSK)
-		ca.log.Printf("%v", ca.chains[0].wrapped[0].cert.Cert.PublicKeyAlgorithm.String())
 	}
 	
 	cert, err := ca.newCertificate(csr.DNSNames, csr.IPAddresses, csr.PublicKey, order.AccountID, order.NotBefore, order.NotAfter)
@@ -678,9 +681,9 @@ func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte) {
 	for i := range c.wrapped {
 		names[n-i-1] = c.wrapped[i].cert.Cert.Subject.CommonName
 	}
-	w := strings.Join(names, ", ")
+	// w := strings.Join(names, ", ")
 
-	ca.log.Printf("Generated issuance chain: %s", c)
-	ca.log.Printf("%s issue: %s", parent.cert.Cert.Subject.CommonName, w)
+	// ca.log.Printf("Generated issuance chain: %s", c)
 
+	fmt.Printf("\nPebble: Generated issuance chain: %s -> %s -> %s\n\n", c.root.cert.Cert.Subject.CommonName, c.intermediates[0].cert.Cert.Subject.CommonName, c.wrapped[0].cert.Cert.Subject.CommonName)
 }
