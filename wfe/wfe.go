@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/liboqs_sig"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -348,7 +349,7 @@ func (wfe *WebFrontEndImpl) sendError(prob *acme.ProblemDetails, response http.R
 }
 
 type certGetter func(no int) *core.Certificate
-type keyGetter func(no int) *rsa.PrivateKey
+type keyGetter func(no int) interface{}
 
 func (wfe *WebFrontEndImpl) handleCert(
 	certGet certGetter,
@@ -422,10 +423,20 @@ func (wfe *WebFrontEndImpl) handleKey(
 		// Write main response
 		var buf bytes.Buffer
 
-		err = pem.Encode(&buf, &pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: x509.MarshalPKCS1PrivateKey(key),
-		})
+		// Check the type of key to create a PEM block
+		switch v := key.(type) {
+		case *rsa.PrivateKey:
+			err = pem.Encode(&buf, &pem.Block{
+				Type:  "RSA PRIVATE KEY",
+				Bytes: x509.MarshalPKCS1PrivateKey(v),
+			})
+		case *liboqs_sig.PrivateKey:
+			keyBytes, _ := x509.MarshalPKCS8PrivateKey(v)
+			err = pem.Encode(&buf, &pem.Block{
+				Type:  "PQC PRIVATE KEY",
+				Bytes: keyBytes,
+			})
+		}
 		if err != nil {
 			wfe.sendError(acme.InternalErrorProblem("unable to encode private key to PEM"), response)
 			return
