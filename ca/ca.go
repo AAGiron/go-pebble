@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/liboqs_sig"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
