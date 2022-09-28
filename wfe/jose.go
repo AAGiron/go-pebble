@@ -30,7 +30,7 @@ func algorithmForKey(key *jose.JSONWebKey) (string, error) {
 		}
 	case *liboqs_sig.PublicKey:
 		switch k.SigId {
-		case liboqs_sig.P256_Dilithium2:
+		case liboqs_sig.Dilithium2:
 			return string(jose.Dilithium2), nil
 		case liboqs_sig.Dilithium3:
 			return string(jose.Dilithium3), nil
