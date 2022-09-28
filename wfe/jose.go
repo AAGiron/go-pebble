@@ -3,6 +3,7 @@ package wfe
 import (
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/liboqs_sig"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -26,6 +27,20 @@ func algorithmForKey(key *jose.JSONWebKey) (string, error) {
 			return string(jose.ES384), nil
 		case "P-521":
 			return string(jose.ES512), nil
+		}
+	case *liboqs_sig.PublicKey:
+		switch k.SigId {
+		case liboqs_sig.Dilithium2:
+			return string(jose.Dilithium2), nil
+		case liboqs_sig.Dilithium3:
+			return string(jose.Dilithium3), nil
+		case liboqs_sig.Dilithium5:
+			return string(jose.Dilithium5), nil
+		case liboqs_sig.Falcon512:
+			return string(jose.Falcon512), nil
+		case liboqs_sig.Falcon1024:
+			return string(jose.Falcon1024), nil
+
 		}
 	}
 	return "", fmt.Errorf("no signature algorithms suitable for given key type: %T", key.Key)

@@ -617,7 +617,7 @@ func (ca *CAImpl) GetRootCert(no int) *core.Certificate {
 	return chain.root.cert
 }
 
-func (ca *CAImpl) GetRootKey(no int) *rsa.PrivateKey {
+func (ca *CAImpl) GetRootKey(no int) interface{} {
 	chain := ca.getChain(no)
 	if chain == nil {
 		return nil
@@ -625,6 +625,9 @@ func (ca *CAImpl) GetRootKey(no int) *rsa.PrivateKey {
 
 	switch key := chain.root.key.(type) {
 	case *rsa.PrivateKey:
+		return key
+	
+	case *liboqs_sig.PrivateKey:
 		return key
 	}
 	return nil
@@ -640,7 +643,7 @@ func (ca *CAImpl) GetIntermediateCert(no int) *core.Certificate {
 	return chain.intermediates[0].cert
 }
 
-func (ca *CAImpl) GetIntermediateKey(no int) *rsa.PrivateKey {
+func (ca *CAImpl) GetIntermediateKey(no int) interface{} {
 	chain := ca.getChain(no)
 	if chain == nil {
 		return nil
@@ -649,6 +652,10 @@ func (ca *CAImpl) GetIntermediateKey(no int) *rsa.PrivateKey {
 	switch key := chain.intermediates[0].key.(type) {
 	case *rsa.PrivateKey:
 		return key
+		
+	case *liboqs_sig.PrivateKey:
+		return key
+
 	}
 	return nil
 }
