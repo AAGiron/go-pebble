@@ -391,7 +391,7 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 	return c
 }
 
-func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.PublicKey, accountID, notBefore, notAfter string) (*core.Certificate, error) {
+	func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.PublicKey, accountID, notBefore, notAfter string, wrappedIssuer *issuer) (*core.Certificate, error) {
 	var cn string
 	if len(domains) > 0 {
 		cn = domains[0]
@@ -402,8 +402,8 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 	}
 
 	var defaultChain []*issuer
-	if _, ok := key.(*wrap.PublicKey); ok {
-		defaultChain = ca.chains[0].wrapped
+	if wrappedIssuer != nil {
+		defaultChain = []*issuer{wrappedIssuer}
 	} else {
 		defaultChain = ca.chains[0].intermediates
 	}
@@ -470,19 +470,18 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 	}
 
 	issuers := make([][]*core.Certificate, len(ca.chains))
-	for i := 0; i < len(ca.chains); i++ {
-		issuerChain := make([]*core.Certificate, len(ca.chains[i].wrapped) + len(ca.chains[i].intermediates))
 
-		for j, cert := range ca.chains[i].wrapped {
-			issuerChain[j] = cert.cert
+	if wrappedIssuer == nil {
+		for i := 0; i < len(ca.chains); i++ {			
+			issuerChain := make([]*core.Certificate, len(ca.chains[i].intermediates))
+			for j, cert := range ca.chains[i].intermediates {
+				issuerChain[j] = cert.cert
+			}
+					
+			issuers[i] = issuerChain
 		}
-
-		wrappedChainLen := len(ca.chains[i].wrapped)
-
-		for j, cert := range ca.chains[i].intermediates {
-			issuerChain[wrappedChainLen + j] = cert.cert
-		}
-		issuers[i] = issuerChain
+	} else {
+		issuers[0] = []*core.Certificate{wrappedIssuer.cert}
 	}
 
 	hexSerial := hex.EncodeToString(cert.SerialNumber.Bytes())
@@ -562,6 +561,8 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 
 	// issue a certificate for the csr
 	csr := order.ParsedCSR
+	
+	var wrappedIssuer *issuer
 
 	if csr.PublicKeyAlgorithm == x509.AES256ECDSA {
 
@@ -583,10 +584,12 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 
 		// Generate a new wrapped Issuer
 		chain := ca.getChain(0)
-		ca.GenWrappedIssuer(chain, certPSK)
+		wrappedIssuer = ca.GenWrappedIssuer(chain, certPSK)
+	} else {
+		wrappedIssuer = nil
 	}
 	
-	cert, err := ca.newCertificate(csr.DNSNames, csr.IPAddresses, csr.PublicKey, order.AccountID, order.NotBefore, order.NotAfter)
+	cert, err := ca.newCertificate(csr.DNSNames, csr.IPAddresses, csr.PublicKey, order.AccountID, order.NotBefore, order.NotAfter, wrappedIssuer)
 	if err != nil {
 		ca.log.Printf("Error: unable to issue order: %s", err.Error())
 		return
@@ -662,7 +665,7 @@ func (ca *CAImpl) GetIntermediateKey(no int) interface{} {
 }
 
 // Adds new wrapped issuer in the chain identified by `c`.
-func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte) {
+func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte) *issuer {
 
 	chainID := hex.EncodeToString(makeSerial().Bytes()[:3])
 	parent := c.intermediates[0]
@@ -694,4 +697,6 @@ func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte) {
 	// ca.log.Printf("Generated issuance chain: %s", c)
 
 	fmt.Printf("\nPebble: Generated issuance chain: %s -> %s -> %s\n\n", c.root.cert.Cert.Subject.CommonName, c.intermediates[0].cert.Cert.Subject.CommonName, c.wrapped[0].cert.Cert.Subject.CommonName)
+
+	return wrapped
 }
