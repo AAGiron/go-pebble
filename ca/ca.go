@@ -695,3 +695,5 @@ func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte) {
 
 	fmt.Printf("\nPebble: Generated issuance chain: %s -> %s -> %s\n\n", c.root.cert.Cert.Subject.CommonName, c.intermediates[0].cert.Cert.Subject.CommonName, c.wrapped[0].cert.Cert.Subject.CommonName)
 }
+
+// Teste
