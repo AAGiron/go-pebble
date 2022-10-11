@@ -563,7 +563,7 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 	// issue a certificate for the csr
 	csr := order.ParsedCSR
 
-	if csr.PublicKeyAlgorithm == x509.AES256ECDSA {
+	if csr.PublicKeyAlgorithm == x509.WrappedECDSA {
 
 		fmt.Printf("\nPebble: Received a CSR with a wrapped public key. Unwrapping the public key and verifying the CSR signature\n\n")
 
