@@ -391,7 +391,7 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 	return c
 }
 
-	func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.PublicKey, accountID, notBefore, notAfter string, wrappedIssuer *issuer) (*core.Certificate, error) {
+func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.PublicKey, accountID, notBefore, notAfter string, wrappedIssuer *issuer) (*core.Certificate, error) {
 	var cn string
 	if len(domains) > 0 {
 		cn = domains[0]
@@ -481,7 +481,17 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 			issuers[i] = issuerChain
 		}
 	} else {
-		issuers[0] = []*core.Certificate{wrappedIssuer.cert}
+		for i := 0; i < len(ca.chains); i++ {			
+			issuerChain := make([]*core.Certificate, len(ca.chains[i].intermediates) + 1)
+			
+			issuerChain[0] = wrappedIssuer.cert
+			
+			for j, cert := range ca.chains[i].intermediates {
+				issuerChain[j+1] = cert.cert
+			}			
+					
+			issuers[i] = issuerChain
+		}				
 	}
 
 	hexSerial := hex.EncodeToString(cert.SerialNumber.Bytes())
