@@ -200,7 +200,8 @@ func (ca *CAImpl) makeWrappedCert(
 	subject pkix.Name,
 	subjectKeyID []byte,
 	signer *issuer,
-	certPSK []byte) (*core.Certificate, error) {
+	certPSK []byte,
+	wrapAlgorithm string) (*core.Certificate, error) {
 
 	serial := makeSerial()
 	template := &x509.Certificate{
@@ -232,7 +233,7 @@ func (ca *CAImpl) makeWrappedCert(
 	// 	return nil, err
 	// }
 
-	wrapped, err := wrap.WrapPublicKey(pk, certPSK)
+	wrapped, err := wrap.WrapPublicKey(pk, certPSK, wrapAlgorithm)
 	if err != nil {
 		return nil, err
 	}
@@ -240,6 +241,7 @@ func (ca *CAImpl) makeWrappedCert(
 	wrapPub := new(wrap.PublicKey)
 	wrapPub.WrappedPk = wrapped
 	wrapPub.ClassicAlgorithm = subjectECDSAPk.Curve
+	wrapPub.WrapAlgorithm = wrapAlgorithm
 
 	der, err := x509.CreateCertificate(rand.Reader, template, parent, wrapPub, signerKey)
 	if err != nil {
@@ -309,12 +311,12 @@ func (ca *CAImpl) newIntermediateIssuer(root *issuer, intermediateKey crypto.Sig
 		cert: ic,
 	}, nil
 }
-func (ca *CAImpl) newWrappedIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte, psk []byte) (*issuer, error) {
+func (ca *CAImpl) newWrappedIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte, psk []byte, wrapAlgorithm string) (*issuer, error) {
 	if root == nil {
 		return nil, fmt.Errorf("Internal error: root must not be nil")
 	}
 	// Make an intermediate certificate with the root issuer
-	ic, err := ca.makeWrappedCert(intermediateKey, subject, subjectKeyID, root, psk)
+	ic, err := ca.makeWrappedCert(intermediateKey, subject, subjectKeyID, root, psk, wrapAlgorithm)
 	if err != nil {
 		return nil, err
 	}
@@ -576,6 +578,11 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 
 	if csr.PublicKeyAlgorithm == x509.WrappedECDSA {
 
+		wrappedCSRPub, ok := csr.PublicKey.(*wrap.PublicKey)
+		if !ok {
+			panic("CSR's PublicKeyAlgorithm is WrappedECDSA but PublicKey is not *wrap.PublicKey")
+		}
+
 		fmt.Printf("\nPebble: Received a CSR with a wrapped public key. Unwrapping the public key and verifying the CSR signature\n\n")
 
 		ok, err := x509.VerifyWrappedCSRSignature(csr)
@@ -594,7 +601,7 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 
 		// Generate a new wrapped Issuer
 		chain := ca.getChain(0)
-		wrappedIssuer = ca.GenWrappedIssuer(chain, certPSK)
+		wrappedIssuer = ca.GenWrappedIssuer(chain, certPSK, wrappedCSRPub.WrapAlgorithm)
 	} else {
 		wrappedIssuer = nil
 	}
@@ -675,7 +682,7 @@ func (ca *CAImpl) GetIntermediateKey(no int) interface{} {
 }
 
 // Adds new wrapped issuer in the chain identified by `c`.
-func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte) *issuer {
+func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte, wrapAlgorithm string) *issuer {
 
 	chainID := hex.EncodeToString(makeSerial().Bytes()[:3])
 	parent := c.intermediates[0]
@@ -690,7 +697,7 @@ func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte) *issuer {
 
 	wrapped, err := ca.newWrappedIssuer(parent, k, pkix.Name{
 		CommonName: fmt.Sprintf("%s%v", interWrappedCAPrefix, chainID),
-	}, ski, psk)
+	}, ski, psk, wrapAlgorithm)
 	if err != nil {
 		panic(fmt.Sprintf("Error creating new intermediate issuer: %s", err.Error()))
 	}
