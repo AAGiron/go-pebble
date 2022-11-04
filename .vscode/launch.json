@@ -11,7 +11,7 @@
             "mode": "debug",
             "cwd": "${workspaceRoot}",
             "program": "${workspaceRoot}/cmd/pebble/main.go",
-            "args": ["-pqtls", "-kex", "Kyber512", "-rootdir", "/home/jpadn/projects/labsec/go-hybrid-tests/root_ca"]
+            "args": ["-pqtls", "-rootSig","sphincsshake128ssimple", "-interSig", "dilithium2", "-issuerSig", "dilithium2","-kex", "Kyber512", "-rootdir", "/home/vvc/Desktop/LabSec/codes/wrapped_certificates/tests/root_ca"]
         }
     ]
 }

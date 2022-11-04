@@ -29,13 +29,33 @@ import (
 	"github.com/letsencrypt/pebble/v2/db"
 )
 
+// Prefix names used for certificates
 const (
-	rootCAPrefix          = "Pebble Root CA "
-	intermediateCAPrefix  = "Pebble Intermediate CA "
-	interWrappedCAPrefix  = "Pebble Wrapped CA "
+	rootCAPrefix            = "Pebble Root CA "
+	intermediateCAPrefix    = "Pebble Intermediate CA "
+	interWrappedCAPrefix    = "Pebble Wrapped CA "
+	pqRootCAPrefix          = "Pebble Post-quantum Root CA "
+	pqIntermediateCAPrefix  = "Pebble Post-quantum Intermediate CA "
 	defaultValidityPeriod = 157766400
 )
+// Signatures schemes for local use
+type pqcSignature int
 
+const (
+
+	unknownPQCsignature pqcSignature = iota
+	
+	Dilithium2 
+	Falcon512  
+	
+	Dilithium3 	
+	
+	Dilithium5
+	Falcon1024 
+
+	Sphincshake128ssimple 
+	Sphincshake256ssimple 
+)
 type CAImpl struct {
 	log              *log.Logger
 	db               *db.MemoryStore
@@ -136,6 +156,38 @@ func makeECDSAKey(securityLevel int) (*ecdsa.PrivateKey, []byte, error) {
 		return nil, nil, err
 	}
 	return key, ski, nil
+}
+
+func makePQCKey(signatureScheme pqcSignature) (*liboqs_sig.PrivateKey, []byte, error) {
+	var ID liboqs_sig.ID
+
+	switch signatureScheme {
+	case 1:
+		ID = liboqs_sig.Dilithium2
+	case 2:
+		ID = liboqs_sig.Falcon512
+	case 3:
+		ID = liboqs_sig.Dilithium3
+	case 4:
+		ID = liboqs_sig.Dilithium5
+	case 5:
+		ID = liboqs_sig.Falcon1024
+	case 6:
+		ID = liboqs_sig.Sphincshake128ssimple
+	case 7:
+		ID = liboqs_sig.Sphincshake256ssimple
+	}
+
+	pub, priv, err := liboqs_sig.GenerateKey(ID)
+	if err != nil {
+		log.Fatalf("Failed to generate private key: %v", err)
+	}
+
+	ski, err := makeSubjectKeyID(pub)
+	if err != nil {
+		return nil, nil, err
+	}
+	return priv, ski, nil
 }
 
 
@@ -296,6 +348,67 @@ func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	}, nil
 }
 
+func getPQCSignatureScheme(signatureScheme string) pqcSignature {
+	
+	// Level 1
+	if signatureScheme  == "dilithium2" {
+		return Dilithium2
+
+	} else if signatureScheme == "falcon512" {
+		return Falcon512
+
+	} else if signatureScheme == "sphincsshake128ssimple" {
+		return Sphincshake128ssimple
+	
+	// Level 3
+		} else if signatureScheme == "dilithium3" {
+		return Dilithium3
+
+	// Level 5
+	} else if signatureScheme == "dilithium5" {
+		return Dilithium5
+	
+	} else if signatureScheme == "falcon1024" {
+		return Falcon1024
+	
+	} else if signatureScheme == "sphincsshake256ssimple" {
+		return Sphincshake256ssimple
+	
+	} else {
+		return unknownPQCsignature
+	} 
+	
+}
+
+func (ca *CAImpl) newPqRootIssuer(name, rootSig string) (*issuer, error) {
+	
+	// Make a root private key
+	sig := getPQCSignatureScheme(rootSig)
+	if sig == unknownPQCsignature {
+		return nil, fmt.Errorf("Error getting signature scheme for root")
+	}
+
+	rk, subjectKeyID, err := makePQCKey(sig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Make a self-signed root certificate
+	subject := pkix.Name{
+		CommonName: pqRootCAPrefix + name,
+	}
+	rc, err := ca.makeRootCert(rk, subject, subjectKeyID, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	ca.log.Printf("Generated new post-quantum root issuer %s with serial %s and SKI %x\n", rc.Cert.Subject, rc.ID, subjectKeyID)
+	return &issuer{
+		key:  rk,
+		cert: rc,
+	}, nil
+}
+
 func (ca *CAImpl) newIntermediateIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte) (*issuer, error) {
 	if root == nil {
 		return nil, fmt.Errorf("Internal error: root must not be nil")
@@ -327,6 +440,22 @@ func (ca *CAImpl) newWrappedIssuer(root *issuer, intermediateKey crypto.Signer, 
 	}, nil
 }
 
+func (ca *CAImpl) newPqIntermediateIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte) (*issuer, error) {
+	if root == nil {
+		return nil, fmt.Errorf("Internal error: root must not be nil")
+	}
+
+	// Make an intermediate certificate with root signature
+	ic, err := ca.makeRootCert(intermediateKey, subject, subjectKeyID, root)
+	if err != nil {
+		return nil, err
+	}
+	ca.log.Printf("Generated new post-quantum intermediate issuer %s with serial %s and SKI %x\n", ic.Cert.Subject, ic.ID, subjectKeyID)
+	return &issuer{
+		key:  intermediateKey,
+		cert: ic,
+	}, nil
+}
 // newChain generates a new issuance chain, including a root certificate and numIntermediates intermediates (at least 1).
 // The first intermediate will use intermediateKey, intermediateSubject and subjectKeyId.
 // Any intermediates between the first intermediate and the root will have their keys and subjects generated automatically.
@@ -394,6 +523,10 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 }
 
 func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.PublicKey, accountID, notBefore, notAfter string, wrappedIssuer *issuer) (*core.Certificate, error) {
+// newChain generates a new issuance chain, including a root certificate and numIntermediates intermediates (at least 1).
+// The first intermediate will use intermediateKey, intermediateSubject and subjectKeyId.
+// Any intermediates between the first intermediate and the root will have their keys and subjects generated automatically.
+
 	var cn string
 	if len(domains) > 0 {
 		cn = domains[0]
@@ -510,8 +643,76 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 	}
 	return newCert, nil
 }
+func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject pkix.Name, subjectKeyID []byte, numIntermediates int, dirToSaveRoot string, pqChain []string) *chain {
+	if numIntermediates <= 0 {
+		panic("At least one intermediate must be present in the certificate chain")
+	}
 
-func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternateRoots int, chainLength int, certificateValidityPeriod uint, dirToSaveRoot string) *CAImpl {
+	chainID := hex.EncodeToString(makeSerial().Bytes()[:3])
+
+	root, err := ca.newPqRootIssuer(chainID, pqChain[0])
+	if err != nil {
+		panic(fmt.Sprintf("Error creating new root issuer: %s", err.Error()))
+	}
+
+	if dirToSaveRoot != "" {
+		certOut, err := os.Create(dirToSaveRoot + "/pq_root_ca_pebble.pem")
+		if err != nil {
+			log.Fatalf("Failed to open cert.pem for writing: %v", err)
+		}
+		if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: root.cert.DER}); err != nil {
+			log.Fatalf("Failed to write data to cert.pem: %v", err)
+		}
+		if err := certOut.Close(); err != nil {
+			log.Fatalf("Error closing cert.pem: %v", err)
+		}	
+	}	
+
+	// The last N-1 intermediates build a path from the root to the leaf signing certificate.
+	// If numIntermediates is only 1, then no intermediates will be generated here.
+	prev := root
+	intermediates := make([]*issuer, numIntermediates)
+	for i := numIntermediates - 1; i > 0; i-- {
+		
+		sig := getPQCSignatureScheme(pqChain[1])
+		if sig == unknownPQCsignature {
+			log.Fatalf("Error getting signature scheme for intermediate")
+		}
+		
+		k, ski, err := makePQCKey(sig)
+
+		if err != nil {
+			panic(fmt.Sprintf("Error creating new intermediate issuer: %v", err))
+		}
+		intermediate, err := ca.newPqIntermediateIssuer(prev, k, pkix.Name{
+			CommonName: fmt.Sprintf("%s%s #%d", intermediateCAPrefix, chainID, i),
+		}, ski)
+		if err != nil {
+			panic(fmt.Sprintf("Error creating new intermediate issuer: %s", err.Error()))
+		}
+		intermediates[i] = intermediate
+		prev = intermediate
+	}
+
+	// The first issuer is the one which signs the leaf certificates
+	intermediate, err := ca.newPqIntermediateIssuer(prev, intermediateKey, intermediateSubject, subjectKeyID)
+	if err != nil {
+		panic(fmt.Sprintf("Error creating new intermediate issuer: %s", err.Error()))
+	}
+	intermediates[0] = intermediate
+	wrappeds := make([]*issuer, 0)
+
+	c := &chain{
+		root:          root,
+		intermediates: intermediates,
+		wrapped:       wrappeds,
+	}
+	ca.log.Printf("Generated issuance chain: %s", c)
+
+	return c
+}
+
+func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternateRoots int, chainLength int, certificateValidityPeriod uint, dirToSaveRoot string, pqChain []string) *CAImpl {
 	ca := &CAImpl{
 		log:                log,
 		db:                 db,
@@ -523,19 +724,42 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 		ca.log.Printf("Setting OCSP responder URL for issued certificates to %q", ca.ocspResponderURL)
 	}
 
-	intermediateSubject := pkix.Name{
-		CommonName: intermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
-	}
-	
-	// intermediateKey, subjectKeyID, err := makeKey()
-	intermediateKey, subjectKeyID, err := makeECDSAKey(3)
+	if pqChain[0] == "" {
+		// intermediateKey, subjectKeyID, err := makeKey()
+		intermediateSubject := pkix.Name{
+			CommonName: intermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
+		}
 
-	if err != nil {
-		panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
-	}
-	ca.chains = make([]*chain, 1+alternateRoots)
-	for i := 0; i < len(ca.chains); i++ {
-		ca.chains[i] = ca.newChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot)
+		intermediateKey, subjectKeyID, err := makeECDSAKey(3)
+
+		if err != nil {
+			panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
+		}
+		ca.chains = make([]*chain, 1+alternateRoots)
+		for i := 0; i < len(ca.chains); i++ {
+			ca.chains[i] = ca.newChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot)
+		}
+
+	} else {
+		intermediateSubject := pkix.Name{
+			CommonName: pqIntermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
+		}
+
+		sig := getPQCSignatureScheme(pqChain[2])
+		if sig == unknownPQCsignature {
+			log.Fatalf("Error getting signature scheme for issuer")
+		}
+
+		intermediateKey, subjectKeyID, err := makePQCKey(sig)
+
+		if err != nil {
+		panic(fmt.Sprintf("Error creating new post-quanum intermediate private key: %s", err.Error()))
+		}
+		ca.chains = make([]*chain, 1+alternateRoots)
+		for i := 0; i < len(ca.chains); i++ {
+			ca.chains[i] = ca.newPqChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot, pqChain)
+		}
+		
 	}
 
 	if certificateValidityPeriod != 0 && certificateValidityPeriod < 9223372038 {
@@ -589,7 +813,7 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 		if err != nil {
 			panic(err)
 		}
-		
+
 		if !ok {
 			panic("Wrapped CSR signature is not valid")
 		}
