@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
@@ -35,6 +36,8 @@ const (
 	interWrappedCAPrefix  = "Pebble Wrapped CA "
 	defaultValidityPeriod = 157766400
 )
+
+var TimingCSVPath string
 
 type CAImpl struct {
 	log              *log.Logger
@@ -576,6 +579,9 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 	
 	var wrappedIssuer *issuer
 
+	timer := time.Now
+	start := timer()	
+
 	if csr.PublicKeyAlgorithm == x509.WrappedECDSA {
 
 		wrappedCSRPub, ok := csr.PublicKey.(*wrap.PublicKey)
@@ -605,12 +611,19 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 	} else {
 		wrappedIssuer = nil
 	}
+	// TODO: If public key algorithm is PQC, verify the CSR signature
 	
 	cert, err := ca.newCertificate(csr.DNSNames, csr.IPAddresses, csr.PublicKey, order.AccountID, order.NotBefore, order.NotAfter, wrappedIssuer)
 	if err != nil {
 		ca.log.Printf("Error: unable to issue order: %s", err.Error())
 		return
 	}
+
+	elapsedTime := timer().Sub(start)	
+	if TimingCSVPath != "" {
+		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), cert.Cert.PublicKey, cert.Cert.SignatureAlgorithm.String())
+	}	
+
 	ca.log.Printf("Issued certificate serial %s for order %s\n", cert.ID, order.ID)
 
 	// Lock and update the order to store the issued certificate
@@ -716,4 +729,52 @@ func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte, wrapAlgorithm string) *
 	fmt.Printf("\nPebble: Generated issuance chain: %s -> %s -> %s\n\n", c.root.cert.Cert.Subject.CommonName, c.intermediates[0].cert.Cert.Subject.CommonName, c.wrapped[0].cert.Cert.Subject.CommonName)
 
 	return wrapped
+}
+func writeElapsedTime(elapsedTime float64, certificatePublicKey interface{}, signatureAlgorithm string) {
+	certAlgorithm := getPublicKeyAlgorithmName(certificatePublicKey)	
+
+	csvFile, err := os.OpenFile(TimingCSVPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		log.Fatalf("failed opening file: %s", err)
+	}
+
+	csvwriter := csv.NewWriter(csvFile)
+
+	toWrite := []string{certAlgorithm, signatureAlgorithm, fmt.Sprintf("%f", elapsedTime)}
+	
+	if err := csvwriter.Write(toWrite); err != nil {
+		log.Fatalln("error writing record to file", err)
+	}
+	
+	csvwriter.Flush()
+	csvFile.Close()
+}
+
+func getPublicKeyAlgorithmName(publicKey interface{}) string {	
+	wrappedPub, ok := publicKey.(*wrap.PublicKey)
+	if ok {
+		return wrappedPub.GetNameString()
+	}
+	pqcPub, ok := publicKey.(*liboqs_sig.PublicKey)
+	if ok {
+		return liboqs_sig.SigIdtoName[pqcPub.SigId]
+	}
+
+	ecPub, ok := publicKey.(*ecdsa.PublicKey)
+	if ok {
+		var ellipticCurve string
+	
+		switch ecPub.Curve {
+		case elliptic.P256():
+			ellipticCurve = "P256"
+		case elliptic.P384():
+			ellipticCurve = "P384"
+		case elliptic.P521():
+			ellipticCurve = "P521"
+		default:
+			ellipticCurve = "Unknown"
+		}		
+		return "ECDSA_" + ellipticCurve
+	}
+	return ""
 }

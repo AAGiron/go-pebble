@@ -59,12 +59,18 @@ func main() {
 		"pqtls",
 		false,
 		"By setting this flag to true, the ACME Server will launch a PQTLS server")
+	timingsCSVPath := flag.String(
+		"timingcsv",
+		"",
+		"Path to the CSV file where the timing metrics are written to")
 
 	flag.Parse()
 	if *configFile == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	ca.TimingCSVPath = *timingsCSVPath
 
 	// Log to stdout
 	logger := log.New(os.Stdout, "Pebble ", log.LstdFlags)
