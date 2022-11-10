@@ -994,5 +994,3 @@ func getPublicKeyAlgorithmName(publicKey interface{}) string {
 	}
 	return ""
 }
-=======
->>>>>>> ae68a40cb9d6211a905b47cc2cc2d80590671bc4
