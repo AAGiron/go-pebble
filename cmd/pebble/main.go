@@ -59,6 +59,21 @@ func main() {
 		"pqtls",
 		false,
 		"By setting this flag to true, the ACME Server will launch a PQTLS server")
+	rootSig := flag.String(
+		"rootSig",
+		"",
+		"Set root signature scheme ")
+
+	interSig := flag.String(
+		"interSig", 
+		"", 
+		"Set intermediate signature scheme",
+	)
+	issuerSig := flag.String(
+		"issuerSig", 
+		"",
+		"Set issuer signature scheme",
+	)
 	timingsCSVPath := flag.String(
 		"timingcsv",
 		"",
@@ -91,8 +106,10 @@ func main() {
 		chainLength = int(val)
 	}
 
+	pqChain := []string{*rootSig, *interSig, *issuerSig}	
+
 	db := db.NewMemoryStore()
-	ca := ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot)
+	ca := ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqChain)
 	va := va.New(logger, c.Pebble.HTTPPort, c.Pebble.TLSPort, *strictMode, *resolverAddress)
 
 	for keyID, key := range c.Pebble.ExternalAccountMACKeys {
