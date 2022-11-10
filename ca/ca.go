@@ -42,6 +42,22 @@ const (
 // Signatures schemes for local use
 type pqcSignature int
 
+const (
+
+	unknownPQCsignature pqcSignature = iota
+	
+	Dilithium2 
+	Falcon512  
+	
+	Dilithium3 	
+	
+	Dilithium5
+	Falcon1024 
+
+	Sphincshake128ssimple 
+	Sphincshake256ssimple 
+)
+
 var TimingCSVPath string
 
 type CAImpl struct {
