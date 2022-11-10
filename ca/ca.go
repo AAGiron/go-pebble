@@ -583,6 +583,13 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 		template.OCSPServer = []string{ca.ocspResponderURL}
 	}
 
+	sctExt, err := x509.CreateSCT(rand.Reader, template, issuer.cert.Cert, key, issuer.key)
+	if err != nil {
+		return nil, err
+	}
+
+	template.ExtraExtensions = []pkix.Extension{sctExt}	
+
 	der, err := x509.CreateCertificate(rand.Reader, template, issuer.cert.Cert, key, issuer.key)
 	if err != nil {
 		return nil, err
