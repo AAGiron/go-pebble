@@ -82,6 +82,10 @@ func main() {
 		"loadtestfinalize",
 		false,
 		"By setting this flag to true, the ACME Server will allow the ACME Client to perform a load test in the /finalize-order/ endpoint")
+	ocspResponseFilePath := flag.String(
+		"ocspresponsepath",
+		"",
+		"Path to the file where the OCSP Response is written to")
 
 	flag.Parse()
 	if *configFile == "" {
@@ -90,6 +94,7 @@ func main() {
 	}
 
 	ca.TimingCSVPath = *timingsCSVPath
+	ca.OCSPResponseFilePath = *ocspResponseFilePath
 	wfe.LoadTestFinalize = *loadTestFinalize
 
 	// Log to stdout

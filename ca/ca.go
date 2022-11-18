@@ -29,6 +29,7 @@ import (
 	"github.com/letsencrypt/pebble/v2/acme"
 	"github.com/letsencrypt/pebble/v2/core"
 	"github.com/letsencrypt/pebble/v2/db"
+	"github.com/letsencrypt/pebble/v2/ocsp"
 )
 
 // Prefix names used for certificates
@@ -60,6 +61,8 @@ const (
 )
 
 var TimingCSVPath string
+var OCSPResponseFilePath string
+var ocspResponse []byte
 
 type CAImpl struct {
 	log              *log.Logger
@@ -605,6 +608,10 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 		return nil, err
 	}
 
+	if OCSPResponseFilePath != "" {
+		ocspResponse, _ = ocsp.CreateOCSPResponse(rand.Reader, issuer.cert.Cert, issuer.key)
+	}
+
 	template.ExtraExtensions = []pkix.Extension{sctExt}	
 
 	der, err := x509.CreateCertificate(rand.Reader, template, issuer.cert.Cert, key, issuer.key)
@@ -855,7 +862,14 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 	elapsedTime := timer().Sub(start)	
 	if TimingCSVPath != "" {
 		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), cert.Cert.PublicKey, cert.Cert.SignatureAlgorithm.String())
-	}	
+	}
+	
+	if ocspResponse != nil && OCSPResponseFilePath != "" {
+		err = os.WriteFile(OCSPResponseFilePath, ocspResponse, 0644)
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	ca.log.Printf("Issued certificate serial %s for order %s\n", cert.ID, order.ID)
 
