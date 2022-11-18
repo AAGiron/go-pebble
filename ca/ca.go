@@ -17,6 +17,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/big"
@@ -962,17 +963,27 @@ func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte, wrapAlgorithm string) *
 
 	return wrapped
 }
+
 func writeElapsedTime(elapsedTime float64, certificatePublicKey interface{}, signatureAlgorithm string) {
+	var toWrite []string
 	certAlgorithm := getPublicKeyAlgorithmName(certificatePublicKey)	
 
-	csvFile, err := os.OpenFile(TimingCSVPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	csvFile, err := os.OpenFile(TimingCSVPath, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		log.Fatalf("failed opening file: %s", err)
 	}
-
+	
 	csvwriter := csv.NewWriter(csvFile)
+	csvReader := csv.NewReader(csvFile)
+	_, err = csvReader.Read()
+	if err == io.EOF {
+		toWrite = []string{"Certificate Public Key Algorithm", "Certificate Signature Algorithm", "/finalize-order/ endpoint issuance time (ms)"}
+		if err := csvwriter.Write(toWrite); err != nil {
+			log.Fatalf("error writing record to file. err: %s", err)
+		}
+	}
 
-	toWrite := []string{certAlgorithm, signatureAlgorithm, fmt.Sprintf("%f", elapsedTime)}
+	toWrite = []string{certAlgorithm, signatureAlgorithm, fmt.Sprintf("%f", elapsedTime)}
 	
 	if err := csvwriter.Write(toWrite); err != nil {
 		log.Fatalln("error writing record to file", err)

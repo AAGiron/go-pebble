@@ -78,6 +78,10 @@ func main() {
 		"timingcsv",
 		"",
 		"Path to the CSV file where the timing metrics are written to")
+	loadTestFinalize := flag.Bool(
+		"loadtestfinalize",
+		false,
+		"By setting this flag to true, the ACME Server will allow the ACME Client to perform a load test in the /finalize-order/ endpoint")
 
 	flag.Parse()
 	if *configFile == "" {
@@ -86,6 +90,7 @@ func main() {
 	}
 
 	ca.TimingCSVPath = *timingsCSVPath
+	wfe.LoadTestFinalize = *loadTestFinalize
 
 	// Log to stdout
 	logger := log.New(os.Stdout, "Pebble ", log.LstdFlags)

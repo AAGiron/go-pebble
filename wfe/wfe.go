@@ -117,6 +117,8 @@ const (
 	defaultOrdersPerPage = 3
 )
 
+var LoadTestFinalize bool
+
 // newAccountRequest is the ACME account information submitted by the client
 type newAccountRequest struct {
 	Contact            []string `json:"contact"`
@@ -1816,8 +1818,11 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 	// Verify the POST request
 	postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
 	if prob != nil {
-		wfe.sendError(prob, response)
-		return
+		if !(LoadTestFinalize && prob.Type != "urn:ietf:params:acme:error:badNonce") {
+			wfe.sendError(prob, response)
+			return
+		}
+
 	}
 
 	// Find the account corresponding to the key that authenticated the POST request
@@ -1853,12 +1858,14 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 		return
 	}
 
-	// The existing order must be in a ready status to finalize it
-	if orderStatus != acme.StatusReady {
-		wfe.sendError(acme.OrderNotReadyProblem(fmt.Sprintf(
-			"Order's status (%q) was not %s", orderStatus, acme.StatusReady)), response)
-		return
-	}
+	if !LoadTestFinalize {
+		// The existing order must be in a ready status to finalize it
+		if orderStatus != acme.StatusReady {
+			wfe.sendError(acme.OrderNotReadyProblem(fmt.Sprintf(
+				"Order's status (%q) was not %s", orderStatus, acme.StatusReady)), response)
+			return
+		}
+	}	
 
 	// The existing order must not be expired
 	if orderExpires.Before(time.Now()) {
