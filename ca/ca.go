@@ -36,6 +36,8 @@ const (
 	interWrappedCAPrefix    = "Pebble Wrapped CA "
 	pqRootCAPrefix          = "Pebble Post-quantum Root CA "
 	pqIntermediateCAPrefix  = "Pebble Post-quantum Intermediate CA "
+	hybridRootCAPrefix          = "Pebble Hybrid Root CA "
+	hybridIntermediateCAPrefix  = "Pebble Hybrid Intermediate CA "
 	defaultValidityPeriod = 157766400
 )
 // Signatures schemes for local use
@@ -53,8 +55,19 @@ const (
 	Dilithium5
 	Falcon1024 
 
-	Sphincshake128ssimple 
-	Sphincshake256ssimple 
+	SphincsShake128sSimple 
+	SphincsShake256sSimple 
+
+	P256_Dilithium2
+	P256_Falcon512
+	P256_SphincsShake128sSimple
+
+
+	P384_Dilithium3
+
+	P521_Dilithium5
+	P521_Falcon1024
+	P521_SphincsShake256sSimple
 )
 type CAImpl struct {
 	log              *log.Logger
@@ -173,9 +186,23 @@ func makePQCKey(signatureScheme pqcSignature) (*liboqs_sig.PrivateKey, []byte, e
 	case 5:
 		ID = liboqs_sig.Falcon1024
 	case 6:
-		ID = liboqs_sig.Sphincshake128ssimple
+		ID = liboqs_sig.SphincsShake128sSimple
 	case 7:
-		ID = liboqs_sig.Sphincshake256ssimple
+		ID = liboqs_sig.SphincsShake256sSimple
+	case 8:
+		ID = liboqs_sig.P256_Dilithium2
+	case 9:
+		ID = liboqs_sig.P256_Falcon512
+	case 10:
+		ID = liboqs_sig.P256_SphincsShake128sSimple
+	case 11:
+		ID = liboqs_sig.P384_Dilithium3
+	case 12: 
+		ID = liboqs_sig.P521_Dilithium5
+	case 13:
+		ID = liboqs_sig.P521_Falcon1024
+	case 14:
+		ID = liboqs_sig.P521_SphincsShake256sSimple
 	}
 
 	pub, priv, err := liboqs_sig.GenerateKey(ID)
@@ -350,37 +377,63 @@ func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 
 func getPQCSignatureScheme(signatureScheme string) pqcSignature {
 	
+	// pqc-only
 	// Level 1
-	if signatureScheme  == "dilithium2" {
+	if signatureScheme  == "Dilithium2" {
 		return Dilithium2
 
-	} else if signatureScheme == "falcon512" {
+	} else if signatureScheme == "Falcon512" {
 		return Falcon512
 
-	} else if signatureScheme == "sphincsshake128ssimple" {
-		return Sphincshake128ssimple
+	} else if signatureScheme == "SphincsShake128sSimple" {
+		return SphincsShake128sSimple
 	
 	// Level 3
-		} else if signatureScheme == "dilithium3" {
+		} else if signatureScheme == "Dilithium3" {
 		return Dilithium3
 
 	// Level 5
-	} else if signatureScheme == "dilithium5" {
+	} else if signatureScheme == "Dilithium5" {
 		return Dilithium5
 	
-	} else if signatureScheme == "falcon1024" {
+	} else if signatureScheme == "Falcon1024" {
 		return Falcon1024
 	
-	} else if signatureScheme == "sphincsshake256ssimple" {
-		return Sphincshake256ssimple
+	} else if signatureScheme == "SphincsShake256sSimple" {
+		return SphincsShake256sSimple
 	
+	// Hybrid
+	// Level 1	
+	} else if signatureScheme == "P256_Dilithium2" {
+		return P256_Dilithium2
+
+	} else if signatureScheme == "P256_Falcon512" {
+		return P256_Falcon512
+	
+	} else if signatureScheme == "P256_SphincsShake128sSimple" {
+		return P256_SphincsShake128sSimple
+
+	// Level 3
+	} else if signatureScheme == "P384_Dilithium3" {
+		return P384_Dilithium3
+	
+	// Level 5
+	} else if signatureScheme == "P521_Dilithium5" {
+		return P521_Dilithium5
+	
+	} else if signatureScheme == "P521_Falcon1024" {
+		return P521_Falcon1024
+	
+	} else if signatureScheme == "P521_SphincsShake256sSimple" {
+		return P521_SphincsShake256sSimple
+
 	} else {
 		return unknownPQCsignature
 	} 
 	
 }
 
-func (ca *CAImpl) newPqRootIssuer(name, rootSig string) (*issuer, error) {
+func (ca *CAImpl) newPqRootIssuer(name, rootSig string, hybrid bool) (*issuer, error) {
 	
 	// Make a root private key
 	sig := getPQCSignatureScheme(rootSig)
@@ -394,15 +447,23 @@ func (ca *CAImpl) newPqRootIssuer(name, rootSig string) (*issuer, error) {
 	}
 
 	// Make a self-signed root certificate
-	subject := pkix.Name{
-		CommonName: pqRootCAPrefix + name,
+	var subject pkix.Name
+	
+	if !hybrid {
+		subject = pkix.Name{
+			CommonName: pqRootCAPrefix + name,
+		}
+	} else {
+		subject = pkix.Name{
+			CommonName: hybridRootCAPrefix + name,
+		}
 	}
 	rc, err := ca.makeRootCert(rk, subject, subjectKeyID, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	ca.log.Printf("Generated new post-quantum root issuer %s with serial %s and SKI %x\n", rc.Cert.Subject, rc.ID, subjectKeyID)
+	ca.log.Printf("Generated new root issuer %s with serial %s and SKI %x\n", rc.Cert.Subject, rc.ID, subjectKeyID)
 	return &issuer{
 		key:  rk,
 		cert: rc,
@@ -440,7 +501,7 @@ func (ca *CAImpl) newWrappedIssuer(root *issuer, intermediateKey crypto.Signer, 
 	}, nil
 }
 
-func (ca *CAImpl) newPqIntermediateIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte) (*issuer, error) {
+func (ca *CAImpl) newPqIntermediateIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte, hybrid bool) (*issuer, error) {
 	if root == nil {
 		return nil, fmt.Errorf("Internal error: root must not be nil")
 	}
@@ -450,7 +511,7 @@ func (ca *CAImpl) newPqIntermediateIssuer(root *issuer, intermediateKey crypto.S
 	if err != nil {
 		return nil, err
 	}
-	ca.log.Printf("Generated new post-quantum intermediate issuer %s with serial %s and SKI %x\n", ic.Cert.Subject, ic.ID, subjectKeyID)
+	ca.log.Printf("Generated new intermediate issuer %s with serial %s and SKI %x\n", ic.Cert.Subject, ic.ID, subjectKeyID)
 	return &issuer{
 		key:  intermediateKey,
 		cert: ic,
@@ -643,20 +704,27 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 	}
 	return newCert, nil
 }
-func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject pkix.Name, subjectKeyID []byte, numIntermediates int, dirToSaveRoot string, pqChain []string) *chain {
+func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject pkix.Name, subjectKeyID []byte, numIntermediates int, dirToSaveRoot string, pqChain []string, hybrid bool) *chain {
 	if numIntermediates <= 0 {
 		panic("At least one intermediate must be present in the certificate chain")
 	}
 
 	chainID := hex.EncodeToString(makeSerial().Bytes()[:3])
 
-	root, err := ca.newPqRootIssuer(chainID, pqChain[0])
+	root, err := ca.newPqRootIssuer(chainID, pqChain[0], hybrid)
 	if err != nil {
 		panic(fmt.Sprintf("Error creating new root issuer: %s", err.Error()))
 	}
 
 	if dirToSaveRoot != "" {
-		certOut, err := os.Create(dirToSaveRoot + "/pq_root_ca_pebble.pem")
+		var certOut *os.File
+
+		if !hybrid {
+			certOut, err = os.Create(dirToSaveRoot + "/pq_root_ca_pebble.pem")
+		} else {
+			certOut, err = os.Create(dirToSaveRoot + "/hybrid_root_ca_pebble.pem")
+		}
+
 		if err != nil {
 			log.Fatalf("Failed to open cert.pem for writing: %v", err)
 		}
@@ -684,9 +752,18 @@ func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject 
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate issuer: %v", err))
 		}
-		intermediate, err := ca.newPqIntermediateIssuer(prev, k, pkix.Name{
-			CommonName: fmt.Sprintf("%s%s #%d", intermediateCAPrefix, chainID, i),
-		}, ski)
+
+		var intermediate *issuer
+		if hybrid {
+			intermediate, err = ca.newPqIntermediateIssuer(prev, k, pkix.Name{
+				CommonName: fmt.Sprintf("%s%s #%d", hybridIntermediateCAPrefix, chainID, i),
+			}, ski, hybrid)
+		} else {
+			intermediate, err = ca.newPqIntermediateIssuer(prev, k, pkix.Name{
+				CommonName: fmt.Sprintf("%s%s #%d", pqIntermediateCAPrefix, chainID, i),
+			}, ski, hybrid)
+		}
+	
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate issuer: %s", err.Error()))
 		}
@@ -695,7 +772,7 @@ func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject 
 	}
 
 	// The first issuer is the one which signs the leaf certificates
-	intermediate, err := ca.newPqIntermediateIssuer(prev, intermediateKey, intermediateSubject, subjectKeyID)
+	intermediate, err := ca.newPqIntermediateIssuer(prev, intermediateKey, intermediateSubject, subjectKeyID, hybrid)
 	if err != nil {
 		panic(fmt.Sprintf("Error creating new intermediate issuer: %s", err.Error()))
 	}
@@ -712,7 +789,7 @@ func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject 
 	return c
 }
 
-func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternateRoots int, chainLength int, certificateValidityPeriod uint, dirToSaveRoot string, pqChain []string) *CAImpl {
+func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternateRoots int, chainLength int, certificateValidityPeriod uint, dirToSaveRoot string, pqChain []string, hybrid bool) *CAImpl {
 	ca := &CAImpl{
 		log:                log,
 		db:                 db,
@@ -725,7 +802,6 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 	}
 
 	if pqChain[0] == "" {
-		// intermediateKey, subjectKeyID, err := makeKey()
 		intermediateSubject := pkix.Name{
 			CommonName: intermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
 		}
@@ -741,10 +817,17 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 		}
 
 	} else {
-		intermediateSubject := pkix.Name{
-			CommonName: pqIntermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
+		var intermediateSubject pkix.Name
+		
+		if hybrid {
+			intermediateSubject = pkix.Name{
+				CommonName: hybridIntermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
+			}
+		} else {
+			intermediateSubject = pkix.Name{
+				CommonName: pqIntermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
+			}
 		}
-
 		sig := getPQCSignatureScheme(pqChain[2])
 		if sig == unknownPQCsignature {
 			log.Fatalf("Error getting signature scheme for issuer")
@@ -753,11 +836,12 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 		intermediateKey, subjectKeyID, err := makePQCKey(sig)
 
 		if err != nil {
-		panic(fmt.Sprintf("Error creating new post-quanum intermediate private key: %s", err.Error()))
+			panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
 		}
+
 		ca.chains = make([]*chain, 1+alternateRoots)
 		for i := 0; i < len(ca.chains); i++ {
-			ca.chains[i] = ca.newPqChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot, pqChain)
+			ca.chains[i] = ca.newPqChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot, pqChain, hybrid)
 		}
 		
 	}
