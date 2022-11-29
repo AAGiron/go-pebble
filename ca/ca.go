@@ -171,40 +171,11 @@ func makeECDSAKey(securityLevel int) (*ecdsa.PrivateKey, []byte, error) {
 	return key, ski, nil
 }
 
-func makePQCKey(signatureScheme pqcSignature) (*liboqs_sig.PrivateKey, []byte, error) {
+func makePQCKey(signatureScheme string) (*liboqs_sig.PrivateKey, []byte, error) {
 	var ID liboqs_sig.ID
 
-	switch signatureScheme {
-	case 1:
-		ID = liboqs_sig.Dilithium2
-	case 2:
-		ID = liboqs_sig.Falcon512
-	case 3:
-		ID = liboqs_sig.Dilithium3
-	case 4:
-		ID = liboqs_sig.Dilithium5
-	case 5:
-		ID = liboqs_sig.Falcon1024
-	case 6:
-		ID = liboqs_sig.SphincsShake128sSimple
-	case 7:
-		ID = liboqs_sig.SphincsShake256sSimple
-	case 8:
-		ID = liboqs_sig.P256_Dilithium2
-	case 9:
-		ID = liboqs_sig.P256_Falcon512
-	case 10:
-		ID = liboqs_sig.P256_SphincsShake128sSimple
-	case 11:
-		ID = liboqs_sig.P384_Dilithium3
-	case 12: 
-		ID = liboqs_sig.P521_Dilithium5
-	case 13:
-		ID = liboqs_sig.P521_Falcon1024
-	case 14:
-		ID = liboqs_sig.P521_SphincsShake256sSimple
-	}
-
+	ID = liboqs_sig.NameToSigID(signatureScheme)
+	
 	pub, priv, err := liboqs_sig.GenerateKey(ID)
 	if err != nil {
 		log.Fatalf("Failed to generate private key: %v", err)
@@ -375,73 +346,11 @@ func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	}, nil
 }
 
-func getPQCSignatureScheme(signatureScheme string) pqcSignature {
-	
-	// pqc-only
-	// Level 1
-	if signatureScheme  == "Dilithium2" {
-		return Dilithium2
-
-	} else if signatureScheme == "Falcon512" {
-		return Falcon512
-
-	} else if signatureScheme == "SphincsShake128sSimple" {
-		return SphincsShake128sSimple
-	
-	// Level 3
-		} else if signatureScheme == "Dilithium3" {
-		return Dilithium3
-
-	// Level 5
-	} else if signatureScheme == "Dilithium5" {
-		return Dilithium5
-	
-	} else if signatureScheme == "Falcon1024" {
-		return Falcon1024
-	
-	} else if signatureScheme == "SphincsShake256sSimple" {
-		return SphincsShake256sSimple
-	
-	// Hybrid
-	// Level 1	
-	} else if signatureScheme == "P256_Dilithium2" {
-		return P256_Dilithium2
-
-	} else if signatureScheme == "P256_Falcon512" {
-		return P256_Falcon512
-	
-	} else if signatureScheme == "P256_SphincsShake128sSimple" {
-		return P256_SphincsShake128sSimple
-
-	// Level 3
-	} else if signatureScheme == "P384_Dilithium3" {
-		return P384_Dilithium3
-	
-	// Level 5
-	} else if signatureScheme == "P521_Dilithium5" {
-		return P521_Dilithium5
-	
-	} else if signatureScheme == "P521_Falcon1024" {
-		return P521_Falcon1024
-	
-	} else if signatureScheme == "P521_SphincsShake256sSimple" {
-		return P521_SphincsShake256sSimple
-
-	} else {
-		return unknownPQCsignature
-	} 
-	
-}
 
 func (ca *CAImpl) newPqRootIssuer(name, rootSig string, hybrid bool) (*issuer, error) {
 	
 	// Make a root private key
-	sig := getPQCSignatureScheme(rootSig)
-	if sig == unknownPQCsignature {
-		return nil, fmt.Errorf("Error getting signature scheme for root")
-	}
-
-	rk, subjectKeyID, err := makePQCKey(sig)
+	rk, subjectKeyID, err := makePQCKey(rootSig)
 	if err != nil {
 		return nil, err
 	}
@@ -742,12 +651,7 @@ func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject 
 	intermediates := make([]*issuer, numIntermediates)
 	for i := numIntermediates - 1; i > 0; i-- {
 		
-		sig := getPQCSignatureScheme(pqChain[1])
-		if sig == unknownPQCsignature {
-			log.Fatalf("Error getting signature scheme for intermediate")
-		}
-		
-		k, ski, err := makePQCKey(sig)
+		k, ski, err := makePQCKey(pqChain[1])
 
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate issuer: %v", err))
@@ -828,13 +732,7 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 				CommonName: pqIntermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
 			}
 		}
-		sig := getPQCSignatureScheme(pqChain[2])
-		if sig == unknownPQCsignature {
-			log.Fatalf("Error getting signature scheme for issuer")
-		}
-
-		intermediateKey, subjectKeyID, err := makePQCKey(sig)
-
+		intermediateKey, subjectKeyID, err := makePQCKey(pqChain[2])
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
 		}

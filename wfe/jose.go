@@ -40,6 +40,24 @@ func algorithmForKey(key *jose.JSONWebKey) (string, error) {
 			return string(jose.Falcon512), nil
 		case liboqs_sig.Falcon1024:
 			return string(jose.Falcon1024), nil
+		case liboqs_sig.SphincsShake128sSimple:
+			return string(jose.SphincsShake128sSimple), nil
+		case liboqs_sig.SphincsShake256sSimple:
+			return string(jose.SphincsShake256sSimple), nil
+		case liboqs_sig.P256_Dilithium2:
+			return string(jose.P256_Dilithium2), nil
+		case liboqs_sig.P256_Falcon512:
+			return string(jose.P256_Falcon512), nil
+		case liboqs_sig.P256_SphincsShake128sSimple:
+			return string(jose.P256_SphincsShake128sSimple), nil
+		case liboqs_sig.P384_Dilithium3:
+			return string(jose.P384_Dilithium3), nil
+		case liboqs_sig.P521_Dilithium5:
+			return string(jose.P521_Dilithium5), nil
+		case liboqs_sig.P521_Falcon1024:
+			return string(jose.P521_Falcon1024), nil
+		case liboqs_sig.P521_SphincsShake256sSimple:
+			return string(jose.P521_SphincsShake256sSimple), nil 
 
 		}
 	}
