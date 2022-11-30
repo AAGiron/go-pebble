@@ -3,9 +3,11 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 
 	"github.com/letsencrypt/pebble/v2/ca"
@@ -62,18 +64,19 @@ func main() {
 	rootSig := flag.String(
 		"rootSig",
 		"",
-		"Set root signature scheme ")
+		"Set the Root CA signature scheme. Possible values: ECDSA-P256, ECDSA-P384, ECDSA-P521, dilithium2, dilihthium3, dilithium5, falcon512, falcon1024, sphincsshake128ssimple, sphincsshake256ssimple")
 
 	interSig := flag.String(
 		"interSig", 
 		"", 
-		"Set intermediate signature scheme",
+		"Set the Intermediate CA signature scheme. Possible values: ECDSA-P256, ECDSA-P384, ECDSA-P521, dilithium2, dilihthium3, dilithium5, falcon512, falcon1024, sphincsshake128ssimple, sphincsshake256ssimple",
 	)
 	issuerSig := flag.String(
 		"issuerSig", 
 		"",
-		"Set issuer signature scheme",
+		"Set the Issuer CA signature scheme. Possible values: ECDSA-P256, ECDSA-P384, ECDSA-P521, dilithium2, dilihthium3, dilithium5, falcon512, falcon1024, sphincsshake128ssimple, sphincsshake256ssimple",
 	)
+	
 	timingsCSVPath := flag.String(
 		"timingcsv",
 		"",
@@ -116,7 +119,20 @@ func main() {
 		chainLength = int(val)
 	}
 
-	pqChain := []string{*rootSig, *interSig, *issuerSig}	
+	pqChain := []string{"", "", ""}
+	ecdsaRegex := regexp.MustCompile(`ECDSA`)		
+	
+	if !ecdsaRegex.MatchString(*rootSig) && !ecdsaRegex.MatchString(*interSig) && !ecdsaRegex.MatchString(*issuerSig) {
+		fmt.Println("PQCHAIN")
+		pqChain = []string{*rootSig, *interSig, *issuerSig}			
+	} else if ecdsaRegex.MatchString(*rootSig) && ecdsaRegex.MatchString(*interSig) && ecdsaRegex.MatchString(*issuerSig) {
+		fmt.Println("CLASSIC CHAIN")
+		ca.RootSig = *rootSig
+		ca.InterSig = *interSig
+		ca.IssuerSig = *issuerSig		
+	} else {
+		panic("mixing post-quantum and classic algorithms in CA chain is not allowed")
+	}
 
 	db := db.NewMemoryStore()
 	ca := ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqChain)

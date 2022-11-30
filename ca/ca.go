@@ -60,9 +60,14 @@ const (
 	Sphincshake256ssimple 
 )
 
-var TimingCSVPath string
-var OCSPResponseFilePath string
-var ocspResponse []byte
+var (
+	RootSig string
+	InterSig string
+	IssuerSig string
+	TimingCSVPath string
+	OCSPResponseFilePath string
+	ocspResponse []byte
+)
 
 type CAImpl struct {
 	log              *log.Logger
@@ -143,15 +148,17 @@ func makeKey() (*rsa.PrivateKey, []byte, error) {
 	return key, ski, nil
 }
 
-func makeECDSAKey(securityLevel int) (*ecdsa.PrivateKey, []byte, error) {
+func makeECDSAKey(classicAlgorithm string) (*ecdsa.PrivateKey, []byte, error) {
 	var curve elliptic.Curve
-	switch securityLevel {
-	case 1:
+	switch classicAlgorithm {
+	case "ECDSA-P256":
 		curve = elliptic.P256()
-	case 3:
+	case "ECDSA-P384":
 		curve = elliptic.P384()
-	case 5:
+	case "ECDSA-P521":
 		curve = elliptic.P521()
+	default:
+		panic(fmt.Sprintf("unknown classic algorithm: %s", classicAlgorithm))
 	}
 
 	key, err := ecdsa.GenerateKey(curve, rand.Reader)
@@ -335,7 +342,7 @@ func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	// Make a root private key
 	
 	// rk, subjectKeyID, err := makeKey()
-	rk, subjectKeyID, err := makeECDSAKey(5)
+	rk, subjectKeyID, err := makeECDSAKey(RootSig)
 
 	if err != nil {
 		return nil, err
@@ -749,7 +756,7 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 			CommonName: intermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
 		}
 
-		intermediateKey, subjectKeyID, err := makeECDSAKey(3)
+		intermediateKey, subjectKeyID, err := makeECDSAKey(InterSig)
 
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
@@ -949,7 +956,7 @@ func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte, wrapAlgorithm string) *
 	// sigScheme := c.sigSchemeWrap
 
 	// k, ski, err := makeKey()
-	k, ski, err := makeECDSAKey(3)
+	k, ski, err := makeECDSAKey(IssuerSig)
 
 	if err != nil {
 		panic(fmt.Sprintf("Error creating new wrapped issuer: %v", err))
