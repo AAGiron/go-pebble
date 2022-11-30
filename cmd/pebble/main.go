@@ -61,6 +61,11 @@ func main() {
 		"pqtls",
 		false,
 		"By setting this flag to true, the ACME Server will launch a PQTLS server")
+	hybrid := flag.Bool(
+		"hybrid", 
+		false,
+		"By setting this flag to true, pebble will launch a hybrid chain",
+	)
 	rootSig := flag.String(
 		"rootSig",
 		"",
@@ -135,7 +140,7 @@ func main() {
 	}
 
 	db := db.NewMemoryStore()
-	ca := ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqChain)
+	ca := ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqChain, *hybrid)
 	va := va.New(logger, c.Pebble.HTTPPort, c.Pebble.TLSPort, *strictMode, *resolverAddress)
 
 	for keyID, key := range c.Pebble.ExternalAccountMACKeys {
