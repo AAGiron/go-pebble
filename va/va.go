@@ -130,7 +130,7 @@ func New(
 	}
 
 	// Read the PEBBLE_VA_NOSLEEP environment variable string
-	noSleep := os.Getenv(noSleepEnvVar)
+	noSleep := "1" //os.Getenv(noSleepEnvVar)
 	// If it is set to something true-like, then the VA shouldn't sleep
 	switch noSleep {
 	case "1", "true", "True", "TRUE":
@@ -138,7 +138,7 @@ func New(
 		va.log.Printf("Disabling random VA sleeps")
 	}
 
-	sleepTime := os.Getenv(sleepTimeEnvVar)
+	sleepTime := "0" //os.Getenv(sleepTimeEnvVar)
 	sleepTimeInt, err := strconv.Atoi(sleepTime)
 	if err == nil && va.sleep && sleepTimeInt >= 1 {
 		va.sleepTime = sleepTimeInt
