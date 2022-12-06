@@ -3,12 +3,13 @@ package main
 import (
 	"crypto/tls"
 	"flag"
-	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/letsencrypt/pebble/v2/ca"
 	"github.com/letsencrypt/pebble/v2/cmd"
@@ -79,7 +80,7 @@ func main() {
 	issuerSig := flag.String(
 		"issuerSig", 
 		"",
-		"Set the Issuer CA signature scheme. Possible values: ECDSA-P256, ECDSA-P384, ECDSA-P521, dilithium2, dilihthium3, dilithium5, falcon512, falcon1024, sphincsshake128ssimple, sphincsshake256ssimple",
+		"Set the Issuer CA signature scheme. Possible values: ECDSA-P256, ECDSA-P384, ECDSA-P521, Dilithium2, Dilihthium3, Dilithium5, Falcon512, Falcon1024, sphincsshake128ssimple, sphincsshake256ssimple",
 	)
 	
 	timingsCSVPath := flag.String(
@@ -94,6 +95,12 @@ func main() {
 		"ocspresponsepath",
 		"",
 		"Path to the file where the OCSP Response is written to")
+	synchronizeLego := flag.Bool(
+		"synclego",
+		false,
+		"By setting this flag to true, the ACME Server will send a notification to the ACME Client saying that the server is ready for connections. This notification will be sent through a socket.",
+	)
+	
 
 	flag.Parse()
 	if *configFile == "" {
@@ -128,10 +135,8 @@ func main() {
 	ecdsaRegex := regexp.MustCompile(`ECDSA`)		
 	
 	if !ecdsaRegex.MatchString(*rootSig) && !ecdsaRegex.MatchString(*interSig) && !ecdsaRegex.MatchString(*issuerSig) {
-		fmt.Println("PQCHAIN")
 		pqChain = []string{*rootSig, *interSig, *issuerSig}			
 	} else if ecdsaRegex.MatchString(*rootSig) && ecdsaRegex.MatchString(*interSig) && ecdsaRegex.MatchString(*issuerSig) {
-		fmt.Println("CLASSIC CHAIN")
 		ca.RootSig = *rootSig
 		ca.InterSig = *interSig
 		ca.IssuerSig = *issuerSig		
@@ -180,6 +185,28 @@ func main() {
 	logger.Printf("Listening on: %s\n", c.Pebble.ListenAddress)
 	logger.Printf("ACME directory available at: https://%s%s",
 		c.Pebble.ListenAddress, wfe.DirectoryPath)
+
+	if *synchronizeLego {
+		// Notifying LEGO that Pebble is ready
+		const message = "pebble is ready"
+		const SERVER_HOST = "127.0.0.1"
+		const SERVER_PORT = "9000"
+
+		var connection net.Conn
+		for {
+			connection, err = net.DialTimeout("tcp", SERVER_HOST+":"+SERVER_PORT, 5 * time.Minute)			
+			if err == nil {
+				break
+			}
+			time.Sleep(3 * time.Second)
+		} 
+		_, err = connection.Write([]byte(message))
+		if err != nil {
+			panic(err)
+		}
+		defer connection.Close()
+	}
+	
 	
 	if *pqtls {
 		tlsCfg := &tls.Config {
