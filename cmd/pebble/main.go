@@ -34,6 +34,9 @@ type config struct {
 		DomainBlocklist []string
 
 		CertificateValidityPeriod uint
+		//new challenge options (default ones, not present in config file)
+		PQOrderListenAddress	string
+		PQOrderTLSPortAddress	int
 	}
 }
 
@@ -99,6 +102,11 @@ func main() {
 		"synclego",
 		false,
 		"By setting this flag to true, the ACME Server will send a notification to the ACME Client saying that the server is ready for connections. This notification will be sent through a socket.",
+	)
+	newchallenge := flag.Bool(
+		"newchallenge",
+		false,
+		"By setting this flag to true, the ACME pq-order/ endpoint will be activated.",			
 	)
 	
 
@@ -182,6 +190,7 @@ func main() {
 		logger.Print("Management interface is disabled")
 	}
 
+
 	logger.Printf("Listening on: %s\n", c.Pebble.ListenAddress)
 	logger.Printf("ACME directory available at: https://%s%s",
 		c.Pebble.ListenAddress, wfe.DirectoryPath)
@@ -207,6 +216,47 @@ func main() {
 		defer connection.Close()
 	}
 	
+
+
+	if *newchallenge{
+		//sets defaults if config not present
+		if c.Pebble.PQOrderTLSPortAddress == 0 {
+			c.Pebble.PQOrderTLSPortAddress = 10001
+		}
+		if c.Pebble.PQOrderListenAddress == "" {
+			c.Pebble.PQOrderListenAddress = "0.0.0.0:"+
+									strconv.Itoa(c.Pebble.PQOrderTLSPortAddress)//+string(wfe.NewChallengePath)
+		}
+
+		tlsCfg := &tls.Config {
+			PQTLSEnabled: true,			
+			IgnoreSigAlg: true,
+			InsecureSkipVerify: false,
+			ClientAuth: tls.RequireAndVerifyClientCert, //mandatory Client Auth
+			//ClientAuth: tls.VerifyClientCertIfGiven, //optional Client Auth		
+		}
+		//creates a handler (not actually needed but it's here if we need endpoints in the future)
+		//newChallengeHandler := newchallenge.handlePQOrder
+		
+		//starts pq-order endpoint in a different TLS config (requires client auth).
+		go func() {
+			http.HandleFunc(string(wfe.NewChallengePath), HandlePQOrder)
+			err := http.ListenAndServeTLSWithConfig(
+				c.Pebble.PQOrderListenAddress,				
+				c.Pebble.Certificate,
+				c.Pebble.PrivateKey,
+				//newChallengeHandler,
+				nil, //default handler
+				tlsCfg,
+			)
+			cmd.FailOnError(err, "Calling ListenAndServeTLS() for /pq-order")
+			}()
+		logger.Printf("ACME %s%s endpoint is activated",c.Pebble.PQOrderListenAddress,string(wfe.NewChallengePath))
+		
+	}
+	
+	
+
 	
 	if *pqtls {
 		tlsCfg := &tls.Config {
@@ -217,6 +267,7 @@ func main() {
 		if curveID != tls.CurveID(0) {
 			tlsCfg.CurvePreferences = []tls.CurveID{curveID}
 		}
+
 		
 		err = http.ListenAndServeTLSWithConfig(
 			c.Pebble.ListenAddress,
@@ -233,6 +284,5 @@ func main() {
 			muxHandler,
 		)
 	}
-	
 	cmd.FailOnError(err, "Calling ListenAndServeTLS()")
 }

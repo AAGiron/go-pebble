@@ -54,6 +54,9 @@ const (
 	keyRolloverPath   = "/rollover-account-key"
 	ordersPath        = "/list-orderz/"
 
+	//new-challenge endpoint: also exported (uppercase initial) to pebble main
+	NewChallengePath	  = "/pq-order"
+
 	// Theses entrypoints are not a part of the standard ACME endpoints,
 	// and are exposed by Pebble as an integration test tool. We export
 	// RootCertPath so that the pebble binary can reference it.
@@ -158,6 +161,8 @@ type WebFrontEndImpl struct {
 	ca                *ca.CAImpl
 	strict            bool
 	requireEAB        bool
+	//new acme challenge integrations
+	//newacme 		  *acme.NewCHImpl
 }
 
 const ToSURL = "data:text/plain,Do%20what%20thou%20wilt"
@@ -167,6 +172,10 @@ func New(
 	db *db.MemoryStore,
 	va *va.VAImpl,
 	ca *ca.CAImpl,
+
+	//new acme challenge integrations
+	//newacme *acme.NewCHImpl,
+
 	strict, requireEAB bool) WebFrontEndImpl {
 	// Seed rand from the current time so test environments don't always have
 	// the same nonce rejection and sleep time patterns.
@@ -520,6 +529,9 @@ func (wfe *WebFrontEndImpl) Handler() http.Handler {
 	wfe.HandleFunc(m, authzPath, wfe.Authz, http.MethodPost)
 	wfe.HandleFunc(m, challengePath, wfe.Challenge, http.MethodPost)
 	wfe.HandleFunc(m, ordersPath, wfe.ListOrders, http.MethodPost)
+
+	//new acme challenge handler
+	//wfe.HandleFunc(m,newChallengePath, wfe.newacme.handlePQOrder, http.MethodPost)
 
 	return m
 }
