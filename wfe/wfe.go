@@ -151,8 +151,8 @@ func (th *topHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type WebFrontEndImpl struct {
-	log               *log.Logger
-	db                *db.MemoryStore
+	Log               *log.Logger
+	Db                *db.MemoryStore
 	nonce             *nonceMap
 	nonceErrPercent   int
 	authzReusePercent int
@@ -227,8 +227,8 @@ func New(
 	log.Printf("Configured to show %d orders per page", ordersPerPage)
 
 	return WebFrontEndImpl{
-		log:               log,
-		db:                db,
+		Log:               log,
+		Db:                db,
 		nonce:             newNonceMap(),
 		nonceErrPercent:   nonceErrPercent,
 		authzReusePercent: authzReusePercent,
@@ -277,7 +277,7 @@ func (wfe *WebFrontEndImpl) HandleFunc(
 				//   The "index" link relation is present on all resources other than the
 				//   directory and indicates the URL of the directory.
 				if pattern != DirectoryPath {
-					directoryURL := wfe.relativeEndpoint(request, DirectoryPath)
+					directoryURL := wfe.RelativeEndpoint(request, DirectoryPath)
 					response.Header().Add("Link", link(directoryURL, "index"))
 				}
 
@@ -285,11 +285,11 @@ func (wfe *WebFrontEndImpl) HandleFunc(
 
 				if !methodsMap[request.Method] {
 					response.Header().Set("Allow", methodsStr)
-					wfe.sendError(acme.MethodNotAllowed(), response)
+					wfe.SendError(acme.MethodNotAllowed(), response)
 					return
 				}
 
-				wfe.log.Printf("%s %s -> calling handler()\n", request.Method, pattern)
+				wfe.Log.Printf("%s %s -> calling handler()\n", request.Method, pattern)
 
 				// TODO(@cpu): Configurable request timeout
 				timeout := 1 * time.Minute
@@ -348,7 +348,7 @@ func (wfe *WebFrontEndImpl) HandleManagementFunc(
 	mux.Handle(pattern, http.StripPrefix(pattern, handler))
 }
 
-func (wfe *WebFrontEndImpl) sendError(prob *acme.ProblemDetails, response http.ResponseWriter) {
+func (wfe *WebFrontEndImpl) SendError(prob *acme.ProblemDetails, response http.ResponseWriter) {
 	problemDoc, err := marshalIndent(prob)
 	if err != nil {
 		problemDoc = []byte("{\"detail\": \"Problem marshaling error message.\"}")
@@ -384,7 +384,7 @@ func (wfe *WebFrontEndImpl) handleCert(
 		}
 
 		// Add links to alternate roots
-		basePath := wfe.relativeEndpoint(request, relPath)
+		basePath := wfe.RelativeEndpoint(request, relPath)
 		for i := 0; i < wfe.ca.GetNumberOfRootCerts(); i++ {
 			if no == i {
 				continue
@@ -422,7 +422,7 @@ func (wfe *WebFrontEndImpl) handleKey(
 		}
 
 		// Add links to alternate root keys
-		basePath := wfe.relativeEndpoint(request, relPath)
+		basePath := wfe.RelativeEndpoint(request, relPath)
 		for i := 0; i < wfe.ca.GetNumberOfRootCerts(); i++ {
 			if no == i {
 				continue
@@ -449,7 +449,7 @@ func (wfe *WebFrontEndImpl) handleKey(
 			})
 		}
 		if err != nil {
-			wfe.sendError(acme.InternalErrorProblem("unable to encode private key to PEM"), response)
+			wfe.SendError(acme.InternalErrorProblem("unable to encode private key to PEM"), response)
 			return
 		}
 
@@ -474,10 +474,10 @@ func (wfe *WebFrontEndImpl) handleCertStatusBySerial(
 	var status string
 	var cert *core.Certificate
 	var rcert *core.RevokedCertificate
-	if rcert = wfe.db.GetRevokedCertificateBySerial(serial); rcert != nil {
+	if rcert = wfe.Db.GetRevokedCertificateBySerial(serial); rcert != nil {
 		status = "Revoked"
 		cert = rcert.Certificate
-	} else if cert = wfe.db.GetCertificateBySerial(serial); cert != nil {
+	} else if cert = wfe.Db.GetCertificateBySerial(serial); cert != nil {
 		status = "Valid"
 	}
 
@@ -503,7 +503,7 @@ func (wfe *WebFrontEndImpl) handleCertStatusBySerial(
 		result.RevokedAt = rcert.RevokedAt.UTC().String()
 	}
 
-	err := wfe.writeJSONResponse(response, http.StatusOK, result)
+	err := wfe.WriteJSONResponse(response, http.StatusOK, result)
 	if err != nil {
 		response.WriteHeader(http.StatusInternalServerError)
 		return
@@ -565,13 +565,13 @@ func (wfe *WebFrontEndImpl) Directory(
 	// RFC 8555 §6.3 says the server's directory endpoint should support
 	// POST-as-GET as well as GET.
 	if request.Method == http.MethodPost {
-		postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+		postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 		if prob != nil {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 		if _, prob := wfe.validPOSTAsGET(postData); prob != nil {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 	}
@@ -580,7 +580,7 @@ func (wfe *WebFrontEndImpl) Directory(
 
 	relDir, err := wfe.relativeDirectory(request, directoryEndpoints)
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("unable to create directory"), response)
+		wfe.SendError(acme.InternalErrorProblem("unable to create directory"), response)
 		return
 	}
 
@@ -593,7 +593,7 @@ func (wfe *WebFrontEndImpl) relativeDirectory(request *http.Request, directory m
 	relativeDir := make(map[string]interface{}, len(directory))
 
 	for k, v := range directory {
-		relativeDir[k] = wfe.relativeEndpoint(request, v)
+		relativeDir[k] = wfe.RelativeEndpoint(request, v)
 	}
 	relativeDir["meta"] = map[string]interface{}{
 		"termsOfService":          ToSURL,
@@ -608,7 +608,7 @@ func (wfe *WebFrontEndImpl) relativeDirectory(request *http.Request, directory m
 	return directoryJSON, nil
 }
 
-func (wfe *WebFrontEndImpl) relativeEndpoint(request *http.Request, endpoint string) string {
+func (wfe *WebFrontEndImpl) RelativeEndpoint(request *http.Request, endpoint string) string {
 	proto := "http"
 	host := request.Host
 
@@ -646,13 +646,13 @@ func (wfe *WebFrontEndImpl) Nonce(
 	// RFC 8555 §6.3 says the server's nonce endpoint should support
 	// POST-as-GET as well as GET.
 	if request.Method == http.MethodPost {
-		postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+		postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 		if prob != nil {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 		if _, prob := wfe.validPOSTAsGET(postData); prob != nil {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 	}
@@ -660,7 +660,7 @@ func (wfe *WebFrontEndImpl) Nonce(
 	response.WriteHeader(statusCode)
 }
 
-func (wfe *WebFrontEndImpl) parseJWS(body string) (*jose.JSONWebSignature, error) {
+func (wfe *WebFrontEndImpl) ParseJWS(body string) (*jose.JSONWebSignature, error) {
 	// Parse the raw JWS JSON to check that:
 	// * the unprotected Header field is not being used.
 	// * the "signatures" member isn't present, just "signature".
@@ -721,7 +721,7 @@ const (
 // exclusive authentication types are specified at the same time, a problem is
 // returned.
 func checkJWSAuthType(jws *jose.JSONWebSignature) (jwsAuthType, *acme.ProblemDetails) {
-	// checkJWSAuthType is called after parseJWS() which defends against the
+	// checkJWSAuthType is called after ParseJWS() which defends against the
 	// incorrect number of signatures.
 	header := jws.Signatures[0].Header
 	// There must not be a Key ID *and* an embedded JWK
@@ -751,11 +751,11 @@ func (wfe *WebFrontEndImpl) extractJWK(_ *http.Request, jws *jose.JSONWebSignatu
 	return key, nil
 }
 
-// lookupJWK returns a JSONWebKey referenced by the "kid" (key id) field in a JWS header.
-func (wfe *WebFrontEndImpl) lookupJWK(request *http.Request, jws *jose.JSONWebSignature) (*jose.JSONWebKey, *acme.ProblemDetails) {
+// LookupJWK returns a JSONWebKey referenced by the "kid" (key id) field in a JWS header.
+func (wfe *WebFrontEndImpl) LookupJWK(request *http.Request, jws *jose.JSONWebSignature) (*jose.JSONWebKey, *acme.ProblemDetails) {
 	header := jws.Signatures[0].Header
 	accountURL := header.KeyID
-	prefix := wfe.relativeEndpoint(request, acctPath)
+	prefix := wfe.RelativeEndpoint(request, acctPath)
 	if !strings.HasPrefix(accountURL, prefix) {
 		return nil, acme.MalformedProblem("Key ID (kid) in JWS header missing expected URL prefix")
 	}
@@ -763,7 +763,7 @@ func (wfe *WebFrontEndImpl) lookupJWK(request *http.Request, jws *jose.JSONWebSi
 	if accountID == "" {
 		return nil, acme.MalformedProblem("No key ID (kid) in JWS header")
 	}
-	account := wfe.db.GetAccountByID(accountID)
+	account := wfe.Db.GetAccountByID(accountID)
 	if account == nil {
 		return nil, acme.AccountDoesNotExistProblem(fmt.Sprintf(
 			"Account %s not found.", accountURL))
@@ -816,7 +816,7 @@ func (wfe *WebFrontEndImpl) validPOSTAsGET(postData *authenticatedPOST) (*core.A
 	}
 
 	// All POST-as-GET requests are authenticated by an existing account
-	account, prob := wfe.getAcctByKey(postData.jwk)
+	account, prob := wfe.GetAcctByKey(postData.Jwk)
 	if prob != nil {
 		return nil, prob
 	}
@@ -831,15 +831,15 @@ type keyExtractor func(*http.Request, *jose.JSONWebSignature) (*jose.JSONWebKey,
 
 type authenticatedPOST struct {
 	postAsGet bool
-	body      []byte
+	Body      []byte
 	url       string
-	jwk       *jose.JSONWebKey
+	Jwk       *jose.JSONWebKey
 }
 
-// NOTE: Unlike `verifyPOST` from the Boulder WFE this version does not
+// NOTE: Unlike `VerifyPOST` from the Boulder WFE this version does not
 // presently handle the `regCheck` parameter or do any lookups for existing
 // accounts.
-func (wfe *WebFrontEndImpl) verifyPOST(
+func (wfe *WebFrontEndImpl) VerifyPOST(
 	request *http.Request,
 	kx keyExtractor) (*authenticatedPOST, *acme.ProblemDetails) {
 
@@ -853,7 +853,7 @@ func (wfe *WebFrontEndImpl) verifyPOST(
 	}
 
 	body := string(bodyBytes)
-	parsedJWS, err := wfe.parseJWS(body)
+	parsedJWS, err := wfe.ParseJWS(body)
 	if err != nil {
 		return nil, acme.MalformedProblem(err.Error())
 	}
@@ -957,9 +957,9 @@ func (wfe *WebFrontEndImpl) verifyJWS(
 
 	return &authenticatedPOST{
 		postAsGet: string(payload) == "",
-		body:      payload,
+		Body:      payload,
 		url:       headerURL,
-		jwk:       pubKey}, nil
+		Jwk:       pubKey}, nil
 }
 
 // isASCII determines if every character in a string is encoded in
@@ -1022,9 +1022,9 @@ func (wfe *WebFrontEndImpl) UpdateAccount(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
-	postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
@@ -1037,19 +1037,19 @@ func (wfe *WebFrontEndImpl) UpdateAccount(
 	if postData.postAsGet {
 		existingAcct, prob = wfe.validPOSTAsGET(postData)
 		if prob != nil {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 	} else {
-		err := json.Unmarshal(postData.body, &updateAcctReq)
+		err := json.Unmarshal(postData.Body, &updateAcctReq)
 		if err != nil {
-			wfe.sendError(
+			wfe.SendError(
 				acme.MalformedProblem("Error unmarshaling account update JSON body"), response)
 			return
 		}
-		existingAcct, prob = wfe.getAcctByKey(postData.jwk)
+		existingAcct, prob = wfe.GetAcctByKey(postData.Jwk)
 		if prob != nil {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 	}
@@ -1058,12 +1058,12 @@ func (wfe *WebFrontEndImpl) UpdateAccount(
 	// simply return the existing account and return early.
 	if updateAcctReq.Contact == nil && updateAcctReq.Status != acme.StatusDeactivated {
 		if !postData.postAsGet {
-			wfe.sendError(acme.MalformedProblem("Use POST-as-GET to retrieve account data instead of doing an empty update"), response)
+			wfe.SendError(acme.MalformedProblem("Use POST-as-GET to retrieve account data instead of doing an empty update"), response)
 			return
 		}
-		err := wfe.writeJSONResponse(response, http.StatusOK, existingAcct)
+		err := wfe.WriteJSONResponse(response, http.StatusOK, existingAcct)
 		if err != nil {
-			wfe.sendError(acme.InternalErrorProblem("Error marshaling account"), response)
+			wfe.SendError(acme.InternalErrorProblem("Error marshaling account"), response)
 			return
 		}
 		return
@@ -1084,7 +1084,7 @@ func (wfe *WebFrontEndImpl) UpdateAccount(
 	case updateAcctReq.Status == acme.StatusDeactivated:
 		newAcct.Status = updateAcctReq.Status
 	case updateAcctReq.Status != "" && updateAcctReq.Status != newAcct.Status:
-		wfe.sendError(
+		wfe.SendError(
 			acme.MalformedProblem(fmt.Sprintf(
 				"Invalid account status: %q", updateAcctReq.Status)), response)
 		return
@@ -1093,21 +1093,21 @@ func (wfe *WebFrontEndImpl) UpdateAccount(
 		// Verify that the contact information provided is supported & valid
 		prob = wfe.verifyContacts(newAcct.Account)
 		if prob != nil {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 	}
 
-	err := wfe.db.UpdateAccountByID(existingAcct.ID, newAcct)
+	err := wfe.Db.UpdateAccountByID(existingAcct.ID, newAcct)
 	if err != nil {
-		wfe.sendError(
+		wfe.SendError(
 			acme.MalformedProblem("Error storing updated account"), response)
 		return
 	}
 
-	err = wfe.writeJSONResponse(response, http.StatusOK, newAcct)
+	err = wfe.WriteJSONResponse(response, http.StatusOK, newAcct)
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("Error marshaling account"), response)
+		wfe.SendError(acme.InternalErrorProblem("Error marshaling account"), response)
 		return
 	}
 }
@@ -1116,15 +1116,15 @@ func (wfe *WebFrontEndImpl) ListOrders(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
-	postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	existingAcct, prob := wfe.validPOSTAsGET(postData)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
@@ -1132,18 +1132,18 @@ func (wfe *WebFrontEndImpl) ListOrders(
 	accountPageStr := strings.TrimPrefix(request.URL.Path, ordersPath)
 	accountPageSplit := strings.SplitN(accountPageStr, "/page/", 2)
 	if len(accountPageSplit) == 0 || accountPageSplit[0] != existingAcct.ID {
-		wfe.sendError(acme.NotFoundProblem("Wrong account ID"), response)
+		wfe.SendError(acme.NotFoundProblem("Wrong account ID"), response)
 		return
 	}
 	if len(accountPageSplit) == 2 {
 		no, err := strconv.Atoi(accountPageSplit[1])
 		if err != nil || no < 2 {
-			wfe.sendError(acme.NotFoundProblem("Invalid page number"), response)
+			wfe.SendError(acme.NotFoundProblem("Invalid page number"), response)
 			return
 		}
 		page = no - 1
 	}
-	orders := wfe.db.GetOrdersByAccountID(existingAcct.ID)
+	orders := wfe.Db.GetOrdersByAccountID(existingAcct.ID)
 	filteredOrders := make([]*core.Order, 0, len(orders))
 	for _, order := range orders {
 		if order.Status == acme.StatusInvalid {
@@ -1166,18 +1166,18 @@ func (wfe *WebFrontEndImpl) ListOrders(
 		Orders: make([]string, 0, end-start),
 	}
 	for _, order := range filteredOrders[start:end] {
-		orderURL := wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", orderPath, order.ID))
+		orderURL := wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", orderPath, order.ID))
 		result.Orders = append(result.Orders, orderURL)
 	}
 
 	if end < len(filteredOrders) {
-		nextPageURL := wfe.relativeEndpoint(request, fmt.Sprintf("%s%s/page/%d", ordersPath, existingAcct.ID, page+2))
+		nextPageURL := wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s/page/%d", ordersPath, existingAcct.ID, page+2))
 		response.Header().Add("Link", link(nextPageURL, "next"))
 	}
 
-	err := wfe.writeJSONResponse(response, http.StatusOK, result)
+	err := wfe.WriteJSONResponse(response, http.StatusOK, result)
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("Error marshaling orders list"), response)
+		wfe.SendError(acme.InternalErrorProblem("Error marshaling orders list"), response)
 		return
 	}
 }
@@ -1197,7 +1197,7 @@ func (wfe *WebFrontEndImpl) verifyKeyRollover(
 	}
 
 	// Check account ID
-	prefix := wfe.relativeEndpoint(request, acctPath)
+	prefix := wfe.RelativeEndpoint(request, acctPath)
 	if !strings.HasPrefix(innerContent.Account, prefix) {
 		return acme.MalformedProblem(fmt.Sprintf("Key ID (account) in inner JWS body missing expected URL prefix (provided account value: %q)", innerContent.Account))
 	}
@@ -1227,64 +1227,64 @@ func (wfe *WebFrontEndImpl) KeyRollover(
 	response http.ResponseWriter,
 	request *http.Request) {
 	// Extract and parse outer JWS, and retrieve account
-	outerPostData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+	outerPostData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
-	existingAcct, prob := wfe.getAcctByKey(outerPostData.jwk)
+	existingAcct, prob := wfe.GetAcctByKey(outerPostData.Jwk)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	// Extract inner JWS
-	parsedInnerJWS, err := wfe.parseJWS(string(outerPostData.body))
+	parsedInnerJWS, err := wfe.ParseJWS(string(outerPostData.Body))
 	if err != nil {
-		wfe.sendError(acme.MalformedProblem(err.Error()), response)
+		wfe.SendError(acme.MalformedProblem(err.Error()), response)
 		return
 	}
 
 	newPubKey, prob := wfe.extractJWK(request, parsedInnerJWS)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	innerPayload, prob := wfe.verifyJWSSignatureAndAlgorithm(newPubKey, parsedInnerJWS)
 	if prob != nil {
 		prob.Detail = "inner JWS error: " + prob.Detail
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	innerHeaderURL, ok := wfe.extractJWSURL(parsedInnerJWS)
 	if !ok {
-		wfe.sendError(acme.MalformedProblem("Inner JWS header parameter 'url' required."), response)
+		wfe.SendError(acme.MalformedProblem("Inner JWS header parameter 'url' required."), response)
 		return
 	}
 
 	if innerHeaderURL != outerPostData.url {
-		wfe.sendError(acme.MalformedProblem("JWS header parameter 'url' differs for inner and outer JWS."), response)
+		wfe.SendError(acme.MalformedProblem("JWS header parameter 'url' differs for inner and outer JWS."), response)
 		return
 	}
 
 	prob = wfe.verifyKeyRollover(innerPayload, existingAcct, newPubKey, request)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	// Ok, now change account key
-	err = wfe.db.ChangeAccountKey(existingAcct, newPubKey)
+	err = wfe.Db.ChangeAccountKey(existingAcct, newPubKey)
 	if err != nil {
 		if existingAccountError, ok := err.(*db.ExistingAccountError); ok {
-			acctURL := wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", acctPath, existingAccountError.MatchingAccount.ID))
+			acctURL := wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", acctPath, existingAccountError.MatchingAccount.ID))
 			response.Header().Set("Location", acctURL)
 			response.WriteHeader(http.StatusConflict)
 		} else {
-			wfe.sendError(acme.InternalErrorProblem(fmt.Sprintf("Error rolling over account key (%s)", err.Error())), response)
+			wfe.SendError(acme.InternalErrorProblem(fmt.Sprintf("Error rolling over account key (%s)", err.Error())), response)
 		}
 		return
 	}
@@ -1297,52 +1297,52 @@ func (wfe *WebFrontEndImpl) NewAccount(
 	response http.ResponseWriter,
 	request *http.Request) {
 
-	// We use extractJWK rather than lookupJWK here because the account is not yet
+	// We use extractJWK rather than LookupJWK here because the account is not yet
 	// created, so the user provides the full key in a JWS header rather than
 	// referring to an existing key.
-	postData, prob := wfe.verifyPOST(request, wfe.extractJWK)
+	postData, prob := wfe.VerifyPOST(request, wfe.extractJWK)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	// newAcctReq is the ACME account information submitted by the client
 	var newAcctReq newAccountRequest
-	err := json.Unmarshal(postData.body, &newAcctReq)
+	err := json.Unmarshal(postData.Body, &newAcctReq)
 	if err != nil {
-		wfe.sendError(
+		wfe.SendError(
 			acme.MalformedProblem("Error unmarshaling body JSON"), response)
 		return
 	}
 
 	// Lookup existing account to exit early if it exists
-	existingAcct, _ := wfe.db.GetAccountByKey(postData.jwk)
+	existingAcct, _ := wfe.Db.GetAccountByKey(postData.Jwk)
 	if existingAcct != nil {
 		if existingAcct.Status == acme.StatusDeactivated {
 			// If there is an existing, but deactivated account, then return an unauthorized
 			// problem informing the user that this account was deactivated
-			wfe.sendError(acme.UnauthorizedProblem(
+			wfe.SendError(acme.UnauthorizedProblem(
 				"An account with the provided public key exists but is deactivated"), response)
 		} else {
 			// If there is an existing account then return a Location header pointing to
 			// the account and a 200 OK response
-			acctURL := wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", acctPath, existingAcct.ID))
+			acctURL := wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", acctPath, existingAcct.ID))
 			response.Header().Set("Location", acctURL)
-			_ = wfe.writeJSONResponse(response, http.StatusOK, existingAcct)
+			_ = wfe.WriteJSONResponse(response, http.StatusOK, existingAcct)
 		}
 		return
 	} else if existingAcct == nil && newAcctReq.OnlyReturnExisting {
 		// If there *isn't* an existing account and the created account request
 		// contained OnlyReturnExisting then this is an error - return now before
 		// creating a new account with the key
-		wfe.sendError(acme.AccountDoesNotExistProblem(
+		wfe.SendError(acme.AccountDoesNotExistProblem(
 			"unable to find existing account for only-return-existing request"), response)
 		return
 	}
 
 	if !newAcctReq.ToSAgreed {
 		response.Header().Add("Link", link(ToSURL, "terms-of-service"))
-		wfe.sendError(
+		wfe.SendError(
 			acme.AgreementRequiredProblem(
 				"Provided account did not agree to the terms of service"),
 			response)
@@ -1354,7 +1354,7 @@ func (wfe *WebFrontEndImpl) NewAccount(
 	// account binding will error however if this is required by the server.
 	eab, prob := wfe.verifyEAB(newAcctReq, postData)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
@@ -1368,30 +1368,30 @@ func (wfe *WebFrontEndImpl) NewAccount(
 			// External account binding keyID may be nil which will be checked further on.
 			ExternalAccountBinding: eab,
 		},
-		Key: postData.jwk,
+		Key: postData.Jwk,
 	}
 
 	// Verify that the contact information provided is supported & valid
 	prob = wfe.verifyContacts(newAcct.Account)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
-	count, err := wfe.db.AddAccount(&newAcct)
+	count, err := wfe.Db.AddAccount(&newAcct)
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("Error saving account"), response)
+		wfe.SendError(acme.InternalErrorProblem("Error saving account"), response)
 		return
 	}
-	newAcct.Orders = wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", ordersPath, newAcct.ID))
-	wfe.log.Printf("There are now %d accounts in memory\n", count)
+	newAcct.Orders = wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", ordersPath, newAcct.ID))
+	wfe.Log.Printf("There are now %d accounts in memory\n", count)
 
-	acctURL := wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", acctPath, newAcct.ID))
+	acctURL := wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", acctPath, newAcct.ID))
 
 	response.Header().Add("Location", acctURL)
-	err = wfe.writeJSONResponse(response, http.StatusCreated, newAcct)
+	err = wfe.WriteJSONResponse(response, http.StatusCreated, newAcct)
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("Error marshaling account"), response)
+		wfe.SendError(acme.InternalErrorProblem("Error marshaling account"), response)
 		return
 	}
 }
@@ -1499,7 +1499,7 @@ func (wfe *WebFrontEndImpl) validateDNSName(rawDomain string) *acme.ProblemDetai
 		}
 	}
 
-	if wfe.db.IsDomainBlocked(rawDomain) {
+	if wfe.Db.IsDomainBlocked(rawDomain) {
 		return acme.RejectedIdentifierProblem(fmt.Sprintf(
 			"Order included an identifier for which issuance is forbidden by policy: %q",
 			rawDomain))
@@ -1525,7 +1525,7 @@ func (wfe *WebFrontEndImpl) makeAuthorizations(order *core.Order, request *http.
 			Value: name.Value,
 		}
 		// If there is an existing valid authz for this identifier, we can reuse it
-		authz := wfe.db.FindValidAuthorization(order.AccountID, ident)
+		authz := wfe.Db.FindValidAuthorization(order.AccountID, ident)
 		// Otherwise create a new pending authz (and randomly not)
 		if authz == nil || rand.Intn(100) > wfe.authzReusePercent {
 			authz = &core.Authorization{
@@ -1538,21 +1538,21 @@ func (wfe *WebFrontEndImpl) makeAuthorizations(order *core.Order, request *http.
 					Expires:    expires.UTC().Format(time.RFC3339),
 				},
 			}
-			authz.URL = wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", authzPath, authz.ID))
+			authz.URL = wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", authzPath, authz.ID))
 			// Create the challenges for this authz
 			err := wfe.makeChallenges(authz, request)
 			if err != nil {
 				return err
 			}
 			// Save the authorization in memory
-			count, err := wfe.db.AddAuthorization(authz)
+			count, err := wfe.Db.AddAuthorization(authz)
 			if err != nil {
 				return err
 			}
-			wfe.log.Printf("There are now %d authorizations in the db\n", count)
+			wfe.Log.Printf("There are now %d authorizations in the db\n", count)
 		}
 
-		authzURL := wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", authzPath, authz.ID))
+		authzURL := wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", authzPath, authz.ID))
 		auths = append(auths, authzURL)
 		authObs = append(authObs, authz)
 	}
@@ -1578,14 +1578,14 @@ func (wfe *WebFrontEndImpl) makeChallenge(
 		Challenge: acme.Challenge{
 			Type:   chalType,
 			Token:  newToken(),
-			URL:    wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", challengePath, id)),
+			URL:    wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", challengePath, id)),
 			Status: acme.StatusPending,
 		},
 		Authz: authz,
 	}
 
 	// Add it to the in-memory database
-	_, err := wfe.db.AddChallenge(chal)
+	_, err := wfe.Db.AddChallenge(chal)
 	if err != nil {
 		return nil, err
 	}
@@ -1636,23 +1636,23 @@ func (wfe *WebFrontEndImpl) NewOrder(
 	response http.ResponseWriter,
 	request *http.Request) {
 
-	postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
-	existingReg, prob := wfe.getAcctByKey(postData.jwk)
+	existingReg, prob := wfe.GetAcctByKey(postData.Jwk)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	// Unpack the order request body
 	var newOrder acme.Order
-	err := json.Unmarshal(postData.body, &newOrder)
+	err := json.Unmarshal(postData.Body, &newOrder)
 	if err != nil {
-		wfe.sendError(
+		wfe.SendError(
 			acme.MalformedProblem("Error unmarshaling body JSON: "+err.Error()), response)
 		return
 	}
@@ -1666,13 +1666,13 @@ func (wfe *WebFrontEndImpl) NewOrder(
 		case acme.IdentifierIP:
 			orderIPs = append(orderIPs, net.ParseIP(ident.Value))
 		default:
-			wfe.sendError(acme.MalformedProblem(
+			wfe.SendError(acme.MalformedProblem(
 				fmt.Sprintf("Order includes unknown identifier type %s", ident.Type)), response)
 			return
 		}
 	}
-	orderDNSs = uniqueLowerNames(orderDNSs)
-	orderIPs = uniqueIPs(orderIPs)
+	orderDNSs = UniqueLowerNames(orderDNSs)
+	orderIPs = UniqueIPs(orderIPs)
 	var uniquenames []acme.Identifier
 	for _, name := range orderDNSs {
 		uniquenames = append(uniquenames, acme.Identifier{Value: name, Type: acme.IdentifierDNS})
@@ -1698,47 +1698,47 @@ func (wfe *WebFrontEndImpl) NewOrder(
 
 	// Verify the details of the order before creating authorizations
 	if err := wfe.verifyOrder(order); err != nil {
-		wfe.sendError(err, response)
+		wfe.SendError(err, response)
 		return
 	}
 
 	// Create the authorizations for the order
 	err = wfe.makeAuthorizations(order, request)
 	if err != nil {
-		wfe.sendError(
+		wfe.SendError(
 			acme.InternalErrorProblem("Error creating authorizations for order"), response)
 		return
 	}
 
 	// Add the order to the in-memory DB
-	count, err := wfe.db.AddOrder(order)
+	count, err := wfe.Db.AddOrder(order)
 	if err != nil {
-		wfe.sendError(
+		wfe.SendError(
 			acme.InternalErrorProblem("Error saving order"), response)
 		return
 	}
-	wfe.log.Printf("Added order %q to the db\n", order.ID)
-	wfe.log.Printf("There are now %d orders in the db\n", count)
+	wfe.Log.Printf("Added order %q to the db\n", order.ID)
+	wfe.Log.Printf("There are now %d orders in the db\n", count)
 
 	// Get the stored order back from the DB. The memorystore will set the order's
 	// status for us.
-	storedOrder := wfe.db.GetOrderByID(order.ID)
+	storedOrder := wfe.Db.GetOrderByID(order.ID)
 
-	orderURL := wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", orderPath, storedOrder.ID))
+	orderURL := wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", orderPath, storedOrder.ID))
 	response.Header().Add("Location", orderURL)
 
-	orderResp := wfe.orderForDisplay(storedOrder, request)
-	err = wfe.writeJSONResponse(response, http.StatusCreated, orderResp)
+	orderResp := wfe.OrderForDisplay(storedOrder, request)
+	err = wfe.WriteJSONResponse(response, http.StatusCreated, orderResp)
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("Error marshaling order"), response)
+		wfe.SendError(acme.InternalErrorProblem("Error marshaling order"), response)
 		return
 	}
 }
 
-// orderForDisplay preps a *core.Order for display by populating some fields
+// OrderForDisplay preps a *core.Order for display by populating some fields
 // based on the http.request provided and returning a *acme.Order ready to be
 // rendered to JSON for display to an API client.
-func (wfe *WebFrontEndImpl) orderForDisplay(
+func (wfe *WebFrontEndImpl) OrderForDisplay(
 	order *core.Order,
 	request *http.Request) acme.Order {
 	// Lock the order for reading
@@ -1763,13 +1763,13 @@ func (wfe *WebFrontEndImpl) orderForDisplay(
 	})
 
 	// Populate a finalization URL for this order
-	result.Finalize = wfe.relativeEndpoint(request,
+	result.Finalize = wfe.RelativeEndpoint(request,
 		fmt.Sprintf("%s%s", orderFinalizePath, order.ID))
 
 	// If the order has a cert ID then set the certificate URL by constructing
 	// a relative path based on the HTTP request & the cert ID
 	if order.CertificateObject != nil {
-		result.Certificate = wfe.relativeEndpoint(
+		result.Certificate = wfe.RelativeEndpoint(
 			request,
 			certPath+order.CertificateObject.ID)
 	}
@@ -1782,19 +1782,19 @@ func (wfe *WebFrontEndImpl) Order(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
-	postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 	account, prob := wfe.validPOSTAsGET(postData)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	orderID := strings.TrimPrefix(request.URL.Path, orderPath)
-	order := wfe.db.GetOrderByID(orderID)
+	order := wfe.Db.GetOrderByID(orderID)
 	if order == nil {
 		response.WriteHeader(http.StatusNotFound)
 		return
@@ -1807,17 +1807,17 @@ func (wfe *WebFrontEndImpl) Order(
 	// authenticated account owns the order being requested
 	if account != nil {
 		if orderAccountID != account.ID {
-			wfe.sendError(acme.UnauthorizedProblem(
+			wfe.SendError(acme.UnauthorizedProblem(
 				"Account that authenticated the request does not own the specified order"), response)
 			return
 		}
 	}
 
 	// Prepare the order for display as JSON
-	orderReq := wfe.orderForDisplay(order, request)
-	err := wfe.writeJSONResponse(response, http.StatusOK, orderReq)
+	orderReq := wfe.OrderForDisplay(order, request)
+	err := wfe.WriteJSONResponse(response, http.StatusOK, orderReq)
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("Error marshaling order"), response)
+		wfe.SendError(acme.InternalErrorProblem("Error marshaling order"), response)
 		return
 	}
 }
@@ -1828,27 +1828,27 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 	request *http.Request) {
 
 	// Verify the POST request
-	postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
 		if !(LoadTestFinalize && prob.Type != "urn:ietf:params:acme:error:badNonce") {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 
 	}
 
 	// Find the account corresponding to the key that authenticated the POST request
-	existingAcct, prob := wfe.getAcctByKey(postData.jwk)
+	existingAcct, prob := wfe.GetAcctByKey(postData.Jwk)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	// Find the order specified by the order ID
 	orderID := strings.TrimPrefix(request.URL.Path, orderFinalizePath)
-	existingOrder := wfe.db.GetOrderByID(orderID)
+	existingOrder := wfe.Db.GetOrderByID(orderID)
 	if existingOrder == nil {
-		wfe.sendError(acme.NotFoundProblem(fmt.Sprintf(
+		wfe.SendError(acme.NotFoundProblem(fmt.Sprintf(
 			"No order %q found for account ID %q", orderID, existingAcct.ID)), response)
 		return
 	}
@@ -1865,7 +1865,7 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 	existingOrder.RUnlock()
 
 	if orderAccountID != existingAcct.ID {
-		wfe.sendError(acme.UnauthorizedProblem(
+		wfe.SendError(acme.UnauthorizedProblem(
 			"Account that authenticated the request does not own the specified order"), response)
 		return
 	}
@@ -1873,7 +1873,7 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 	if !LoadTestFinalize {
 		// The existing order must be in a ready status to finalize it
 		if orderStatus != acme.StatusReady {
-			wfe.sendError(acme.OrderNotReadyProblem(fmt.Sprintf(
+			wfe.SendError(acme.OrderNotReadyProblem(fmt.Sprintf(
 				"Order's status (%q) was not %s", orderStatus, acme.StatusReady)), response)
 			return
 		}
@@ -1881,7 +1881,7 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 
 	// The existing order must not be expired
 	if orderExpires.Before(time.Now()) {
-		wfe.sendError(acme.NotFoundProblem(fmt.Sprintf(
+		wfe.SendError(acme.NotFoundProblem(fmt.Sprintf(
 			"Order %q expired %s", orderID, orderExpires)), response)
 		return
 	}
@@ -1891,23 +1891,23 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 	var finalizeMessage struct {
 		CSR string
 	}
-	err := json.Unmarshal(postData.body, &finalizeMessage)
+	err := json.Unmarshal(postData.Body, &finalizeMessage)
 	if err != nil {
-		wfe.sendError(acme.MalformedProblem(fmt.Sprintf(
+		wfe.SendError(acme.MalformedProblem(fmt.Sprintf(
 			"Error unmarshaling finalize order request body: %s", err.Error())), response)
 		return
 	}
 
 	csrBytes, err := base64.RawURLEncoding.DecodeString(finalizeMessage.CSR)
 	if err != nil {
-		wfe.sendError(
+		wfe.SendError(
 			acme.MalformedProblem("Error decoding Base64url-encoded CSR: "+err.Error()), response)
 		return
 	}
 
 	parsedCSR, err := x509.ParseCertificateRequest(csrBytes)
 	if err != nil {
-		wfe.sendError(
+		wfe.SendError(
 			acme.MalformedProblem("Error parsing Base64url-encoded CSR: "+err.Error()), response)
 		return
 	}
@@ -1922,27 +1922,27 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 		case acme.IdentifierIP:
 			orderIPs = append(orderIPs, net.ParseIP(ident.Value))
 		default:
-			wfe.sendError(acme.MalformedProblem(
+			wfe.SendError(acme.MalformedProblem(
 				fmt.Sprintf("Order includes unknown identifier type %s", ident.Type)), response)
 			return
 		}
 	}
 	// looks like saving order to db doesn't preserve order of Identifiers, so sort them again.
-	orderDNSs = uniqueLowerNames(orderDNSs)
-	orderIPs = uniqueIPs(orderIPs)
+	orderDNSs = UniqueLowerNames(orderDNSs)
+	orderIPs = UniqueIPs(orderIPs)
 
 	// sort and deduplicate CSR SANs
-	csrDNSs := uniqueLowerNames(parsedCSR.DNSNames)
-	csrIPs := uniqueIPs(parsedCSR.IPAddresses)
+	csrDNSs := UniqueLowerNames(parsedCSR.DNSNames)
+	csrIPs := UniqueIPs(parsedCSR.IPAddresses)
 
 	// Check that the CSR has the same number of names as the initial order contained
 	if len(csrDNSs) != len(orderDNSs) {
-		wfe.sendError(acme.UnauthorizedProblem(
+		wfe.SendError(acme.UnauthorizedProblem(
 			"Order includes different number of DNSnames identifiers than CSR specifies"), response)
 		return
 	}
 	if len(csrIPs) != len(orderIPs) {
-		wfe.sendError(acme.UnauthorizedProblem(
+		wfe.SendError(acme.UnauthorizedProblem(
 			"Order includes different number of IP address identifiers than CSR specifies"), response)
 		return
 	}
@@ -1950,23 +1950,23 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 	// Check that the CSR's names match the order names exactly
 	for i, name := range orderDNSs {
 		if name != csrDNSs[i] {
-			wfe.sendError(acme.UnauthorizedProblem(
+			wfe.SendError(acme.UnauthorizedProblem(
 				fmt.Sprintf("CSR is missing Order domain %q", name)), response)
 			return
 		}
 	}
 	for i, IP := range orderIPs {
 		if !csrIPs[i].Equal(IP) {
-			wfe.sendError(acme.UnauthorizedProblem(
+			wfe.SendError(acme.UnauthorizedProblem(
 				fmt.Sprintf("CSR is missing Order IP %q", IP)), response)
 			return
 		}
 	}
 
 	// No account key signing RFC8555 Section 11.1
-	existsAcctForCSRKey, _ := wfe.getAcctByKey(parsedCSR.PublicKey)
+	existsAcctForCSRKey, _ := wfe.GetAcctByKey(parsedCSR.PublicKey)
 	if existsAcctForCSRKey != nil {
-		wfe.sendError(acme.BadCSRProblem("CSR contains a public key for a known account"), response)
+		wfe.SendError(acme.BadCSRProblem("CSR contains a public key for a known account"), response)
 		return
 	}
 
@@ -1978,19 +1978,19 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 	existingOrder.Unlock()
 
 	// Ask the CA to complete the order in a separate goroutine.
-	wfe.log.Printf("Order %s is fully authorized. Processing finalization", orderID)
+	wfe.Log.Printf("Order %s is fully authorized. Processing finalization", orderID)
 	go wfe.ca.CompleteOrder(existingOrder)
 
 	// Set the existingOrder to processing before displaying to the user
 	existingOrder.Status = acme.StatusProcessing
 
 	// Prepare the order for display as JSON
-	orderReq := wfe.orderForDisplay(existingOrder, request)
-	orderURL := wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", orderPath, existingOrder.ID))
+	orderReq := wfe.OrderForDisplay(existingOrder, request)
+	orderURL := wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", orderPath, existingOrder.ID))
 	response.Header().Add("Location", orderURL)
-	err = wfe.writeJSONResponse(response, http.StatusOK, orderReq)
+	err = wfe.WriteJSONResponse(response, http.StatusOK, orderReq)
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("Error marshaling order"), response)
+		wfe.SendError(acme.InternalErrorProblem("Error marshaling order"), response)
 		return
 	}
 }
@@ -2041,14 +2041,14 @@ func (wfe *WebFrontEndImpl) Authz(
 	// There are two types of requests we might get:
 	//   A) a POST to update the authorization
 	//   B) a POST-as-GET to get the authorization
-	postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	authzID := strings.TrimPrefix(request.URL.Path, authzPath)
-	authz := wfe.db.GetAuthorizationByID(authzID)
+	authz := wfe.Db.GetAuthorizationByID(authzID)
 	if authz == nil {
 		response.WriteHeader(http.StatusNotFound)
 		return
@@ -2063,14 +2063,14 @@ func (wfe *WebFrontEndImpl) Authz(
 	// If the postData is not a POST-as-GET, treat this as case A) and update
 	// the authorization based on the postData
 	if !postData.postAsGet {
-		existingAcct, prob := wfe.getAcctByKey(postData.jwk)
+		existingAcct, prob := wfe.GetAcctByKey(postData.Jwk)
 		if prob != nil {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 
 		if orderAcctID != existingAcct.ID {
-			wfe.sendError(acme.UnauthorizedProblem(
+			wfe.SendError(acme.UnauthorizedProblem(
 				"Account does not own authorization"), response)
 			return
 		}
@@ -2078,16 +2078,16 @@ func (wfe *WebFrontEndImpl) Authz(
 		var deactivateRequest struct {
 			Status string
 		}
-		err := json.Unmarshal(postData.body, &deactivateRequest)
+		err := json.Unmarshal(postData.Body, &deactivateRequest)
 		if err != nil {
-			wfe.sendError(acme.MalformedProblem(
+			wfe.SendError(acme.MalformedProblem(
 				fmt.Sprintf("Malformed authorization update: %s",
 					err.Error())), response)
 			return
 		}
 
 		if deactivateRequest.Status != "deactivated" {
-			wfe.sendError(acme.MalformedProblem(
+			wfe.SendError(acme.MalformedProblem(
 				fmt.Sprintf("Malformed authorization update, status must be \"deactivated\" not %q",
 					deactivateRequest.Status)), response)
 			return
@@ -2099,24 +2099,24 @@ func (wfe *WebFrontEndImpl) Authz(
 		// being fetched.
 		account, prob := wfe.validPOSTAsGET(postData)
 		if prob != nil {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 
 		if orderAcctID != account.ID {
-			wfe.sendError(acme.UnauthorizedProblem(
+			wfe.SendError(acme.UnauthorizedProblem(
 				"Account authorizing the request is not the owner of the authorization"),
 				response)
 			return
 		}
 	}
 
-	err := wfe.writeJSONResponse(
+	err := wfe.WriteJSONResponse(
 		response,
 		http.StatusOK,
 		prepAuthorizationForDisplay(authz))
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("Error marshaling authz"), response)
+		wfe.SendError(acme.InternalErrorProblem("Error marshaling authz"), response)
 		return
 	}
 }
@@ -2128,14 +2128,14 @@ func (wfe *WebFrontEndImpl) Challenge(
 	// There are two possibilities:
 	// A) request is a POST to begin a challenge
 	// B) request is a POST-as-GET to poll a challenge
-	postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	chalID := strings.TrimPrefix(request.URL.Path, challengePath)
-	chal := wfe.db.GetChallengeByID(chalID)
+	chal := wfe.Db.GetChallengeByID(chalID)
 	if chal == nil {
 		response.WriteHeader(http.StatusNotFound)
 		return
@@ -2150,7 +2150,7 @@ func (wfe *WebFrontEndImpl) Challenge(
 		// Otherwise it is case B)
 		account, prob = wfe.validPOSTAsGET(postData)
 		if prob != nil {
-			wfe.sendError(prob, response)
+			wfe.SendError(prob, response)
 			return
 		}
 	}
@@ -2160,23 +2160,23 @@ func (wfe *WebFrontEndImpl) Challenge(
 	defer chal.RUnlock()
 
 	if chal.Authz.Order.AccountID != account.ID {
-		wfe.sendError(acme.UnauthorizedProblem(
+		wfe.SendError(acme.UnauthorizedProblem(
 			"Account authenticating request is not the owner of the challenge"), response)
 		return
 	}
 
-	err := wfe.writeJSONResponse(response, http.StatusOK, chal.Challenge)
+	err := wfe.WriteJSONResponse(response, http.StatusOK, chal.Challenge)
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("Error marshaling challenge"), response)
+		wfe.SendError(acme.InternalErrorProblem("Error marshaling challenge"), response)
 		return
 	}
 }
 
-// getAcctByKey finds a account by key or returns a problem pointer if an
+// GetAcctByKey finds a account by key or returns a problem pointer if an
 // existing account can't be found or the key is invalid.
-func (wfe *WebFrontEndImpl) getAcctByKey(key crypto.PublicKey) (*core.Account, *acme.ProblemDetails) {
+func (wfe *WebFrontEndImpl) GetAcctByKey(key crypto.PublicKey) (*core.Account, *acme.ProblemDetails) {
 	// Find the existing account object for that key
-	existingAcct, err := wfe.db.GetAccountByKey(key)
+	existingAcct, err := wfe.Db.GetAccountByKey(key)
 	if err != nil {
 		return nil, acme.AccountDoesNotExistProblem("Error while retrieving key ID from public key")
 	}
@@ -2244,9 +2244,9 @@ func (wfe *WebFrontEndImpl) updateChallenge(
 	response http.ResponseWriter,
 	request *http.Request) {
 
-	existingAcct, prob := wfe.getAcctByKey(postData.jwk)
+	existingAcct, prob := wfe.GetAcctByKey(postData.Jwk)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
@@ -2256,8 +2256,8 @@ func (wfe *WebFrontEndImpl) updateChallenge(
 	// extensions to ACME that add new challenge types.
 	//
 	// [0]: https://www.rfc-editor.org/errata/eid5729
-	if wfe.strict && !bytes.Equal(postData.body, []byte("{}")) {
-		wfe.sendError(
+	if wfe.strict && !bytes.Equal(postData.Body, []byte("{}")) {
+		wfe.SendError(
 			acme.MalformedProblem(`challenge initiation POST JWS body was not "{}"`), response)
 		return
 	} else {
@@ -2266,9 +2266,9 @@ func (wfe *WebFrontEndImpl) updateChallenge(
 		var chalResp struct {
 			KeyAuthorization *string
 		}
-		err := json.Unmarshal(postData.body, &chalResp)
+		err := json.Unmarshal(postData.Body, &chalResp)
 		if err != nil {
-			wfe.sendError(
+			wfe.SendError(
 				acme.MalformedProblem("Error unmarshaling body JSON"), response)
 			return
 		}
@@ -2279,7 +2279,7 @@ func (wfe *WebFrontEndImpl) updateChallenge(
 		// a way to be more aggressive about pushing clients implementations in the
 		// right direction, so we treat this as a malformed request.
 		if chalResp.KeyAuthorization != nil {
-			wfe.sendError(
+			wfe.SendError(
 				acme.MalformedProblem(
 					"Challenge response body contained legacy KeyAuthorization field, "+
 						"POST body should be `{}`"), response)
@@ -2288,7 +2288,7 @@ func (wfe *WebFrontEndImpl) updateChallenge(
 	}
 
 	chalID := strings.TrimPrefix(request.URL.Path, challengePath)
-	existingChal := wfe.db.GetChallengeByID(chalID)
+	existingChal := wfe.Db.GetChallengeByID(chalID)
 	if existingChal == nil {
 		response.WriteHeader(http.StatusNotFound)
 		return
@@ -2296,11 +2296,11 @@ func (wfe *WebFrontEndImpl) updateChallenge(
 
 	authz, prob := wfe.validateChallengeUpdate(existingChal)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 	if authz == nil {
-		wfe.sendError(
+		wfe.SendError(
 			acme.InternalErrorProblem("challenge missing associated authz"), response)
 		return
 	}
@@ -2312,14 +2312,14 @@ func (wfe *WebFrontEndImpl) updateChallenge(
 	authz.RUnlock()
 
 	if orderAcctID != existingAcct.ID {
-		wfe.sendError(acme.UnauthorizedProblem(
+		wfe.SendError(acme.UnauthorizedProblem(
 			"Account authenticating request is not the owner of the challenge"), response)
 		return
 	}
 
 	existingOrder, prob := wfe.validateAuthzForChallenge(authz)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
@@ -2330,7 +2330,7 @@ func (wfe *WebFrontEndImpl) updateChallenge(
 
 	now := time.Now()
 	if now.After(expiry) {
-		wfe.sendError(
+		wfe.SendError(
 			acme.MalformedProblem(fmt.Sprintf("order expired %s",
 				expiry.Format(time.RFC3339))), response)
 		return
@@ -2355,9 +2355,9 @@ func (wfe *WebFrontEndImpl) updateChallenge(
 	existingChal.RLock()
 	defer existingChal.RUnlock()
 	response.Header().Add("Link", link(existingChal.Authz.URL, "up"))
-	err := wfe.writeJSONResponse(response, http.StatusOK, existingChal.Challenge)
+	err := wfe.WriteJSONResponse(response, http.StatusOK, existingChal.Challenge)
 	if err != nil {
-		wfe.sendError(acme.InternalErrorProblem("Error marshaling challenge"), response)
+		wfe.SendError(acme.InternalErrorProblem("Error marshaling challenge"), response)
 		return
 	}
 }
@@ -2408,14 +2408,14 @@ func (wfe *WebFrontEndImpl) Certificate(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
-	postData, prob := wfe.verifyPOST(request, wfe.lookupJWK)
+	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 	acct, prob := wfe.validPOSTAsGET(postData)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
@@ -2425,14 +2425,14 @@ func (wfe *WebFrontEndImpl) Certificate(
 		response.WriteHeader(http.StatusNotFound)
 		return
 	}
-	cert := wfe.db.GetCertificateByID(serial)
+	cert := wfe.Db.GetCertificateByID(serial)
 	if cert == nil {
 		response.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	if cert.AccountID != acct.ID {
-		wfe.sendError(acme.UnauthorizedProblem(
+		wfe.SendError(acme.UnauthorizedProblem(
 			"Account authenticating request does not own certificate"), response)
 		return
 	}
@@ -2443,7 +2443,7 @@ func (wfe *WebFrontEndImpl) Certificate(
 	}
 
 	// Add links to alternate roots
-	basePath := wfe.relativeEndpoint(request, fmt.Sprintf("%s%s", certPath, serial))
+	basePath := wfe.RelativeEndpoint(request, fmt.Sprintf("%s%s", certPath, serial))
 	addAlternateLinks(response, basePath, no, len(cert.IssuerChains))
 
 	response.Header().Set("Content-Type", "application/pem-certificate-chain; charset=utf-8")
@@ -2451,7 +2451,7 @@ func (wfe *WebFrontEndImpl) Certificate(
 	_, _ = response.Write(cert.Chain(no))
 }
 
-func (wfe *WebFrontEndImpl) writeJSONResponse(response http.ResponseWriter, status int, v interface{}) error {
+func (wfe *WebFrontEndImpl) WriteJSONResponse(response http.ResponseWriter, status int, v interface{}) error {
 	jsonReply, err := marshalIndent(v)
 	if err != nil {
 		return err // All callers are responsible for handling this error
@@ -2478,10 +2478,10 @@ func link(url, relation string) string {
 	return fmt.Sprintf("<%s>;rel=\"%s\"", url, relation)
 }
 
-// uniqueLowerNames returns the set of all unique names in the input after all
+// UniqueLowerNames returns the set of all unique names in the input after all
 // of them are lowercased. The returned names will be in their lowercased form
 // and sorted alphabetically. See Boulder `core/util.go UniqueLowerNames`.
-func uniqueLowerNames(names []string) []string {
+func UniqueLowerNames(names []string) []string {
 	nameMap := make(map[string]int, len(names))
 	for _, name := range names {
 		nameMap[strings.ToLower(name)] = 1
@@ -2494,9 +2494,9 @@ func uniqueLowerNames(names []string) []string {
 	return unique
 }
 
-// uniqueIPs returns the set of all unique IP addresses in the input.
+// UniqueIPs returns the set of all unique IP addresses in the input.
 // The returned IP addresses will be sorted in ascending order in text form.
-func uniqueIPs(IPs []net.IP) []net.IP {
+func UniqueIPs(IPs []net.IP) []net.IP {
 	uniqMap := make(map[string]net.IP)
 	for _, ip := range IPs {
 		uniqMap[ip.String()] = ip
@@ -2532,28 +2532,28 @@ func (wfe *WebFrontEndImpl) RevokeCert(
 
 	bodyBytes, err := ioutil.ReadAll(request.Body)
 	if err != nil {
-		wfe.sendError(
+		wfe.SendError(
 			acme.InternalErrorProblem("unable to read request body"), response)
 		return
 	}
 	body := string(bodyBytes)
 
-	parsedJWS, err := wfe.parseJWS(body)
+	parsedJWS, err := wfe.ParseJWS(body)
 	if err != nil {
-		wfe.sendError(
+		wfe.SendError(
 			acme.MalformedProblem(err.Error()), response)
 		return
 	}
 
 	if prob := wfe.validPOST(request); prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
 	// Determine the authentication type for this request
 	authType, prob := checkJWSAuthType(parsedJWS)
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
@@ -2567,7 +2567,7 @@ func (wfe *WebFrontEndImpl) RevokeCert(
 		prob = acme.MalformedProblem("Malformed JWS, no KeyID or embedded JWK")
 	}
 	if prob != nil {
-		wfe.sendError(prob, response)
+		wfe.SendError(prob, response)
 		return
 	}
 
@@ -2578,7 +2578,7 @@ func (wfe *WebFrontEndImpl) revokeCertByKeyID(
 	jws *jose.JSONWebSignature,
 	request *http.Request) *acme.ProblemDetails {
 
-	pubKey, prob := wfe.lookupJWK(request, jws)
+	pubKey, prob := wfe.LookupJWK(request, jws)
 	if prob != nil {
 		return prob
 	}
@@ -2588,7 +2588,7 @@ func (wfe *WebFrontEndImpl) revokeCertByKeyID(
 		return prob
 	}
 
-	existingAcct, err := wfe.db.GetAccountByKey(postData.jwk)
+	existingAcct, err := wfe.Db.GetAccountByKey(postData.Jwk)
 	if err != nil {
 		return acme.MalformedProblem(fmt.Sprintf("Cannot obtain key ID from public key (%s)", err.Error()))
 	}
@@ -2609,7 +2609,7 @@ func (wfe *WebFrontEndImpl) revokeCertByKeyID(
 				"The certificate being revoked is not associated with account %q",
 				existingAcct.ID))
 	}
-	return wfe.processRevocation(postData.body, authorizedToRevoke)
+	return wfe.processRevocation(postData.Body, authorizedToRevoke)
 }
 
 func (wfe *WebFrontEndImpl) revokeCertByJWK(
@@ -2625,7 +2625,7 @@ func (wfe *WebFrontEndImpl) revokeCertByJWK(
 	if prob != nil {
 		return prob
 	}
-	requestKey = postData.jwk
+	requestKey = postData.Jwk
 
 	// For embedded JWK revocations we decide if a requester is able to revoke a specific
 	// certificate by checking that to-be-revoked certificate has the same public
@@ -2637,7 +2637,7 @@ func (wfe *WebFrontEndImpl) revokeCertByJWK(
 		return acme.UnauthorizedProblem(
 			"JWK embedded in revocation request must be the same public key as the cert to be revoked")
 	}
-	return wfe.processRevocation(postData.body, authorizedToRevoke)
+	return wfe.processRevocation(postData.Body, authorizedToRevoke)
 }
 
 // authorizedToRevokeCert is a callback function that can be used to validate if
@@ -2674,9 +2674,9 @@ func (wfe *WebFrontEndImpl) processRevocation(
 		return acme.MalformedProblem("Error decoding Base64url-encoded DER: " + err.Error())
 	}
 
-	cert := wfe.db.GetCertificateByDER(derBytes)
+	cert := wfe.Db.GetCertificateByDER(derBytes)
 	if cert == nil {
-		cert := wfe.db.GetRevokedCertificateByDER(derBytes)
+		cert := wfe.Db.GetRevokedCertificateByDER(derBytes)
 		if cert != nil {
 			return acme.AlreadyRevokedProblem(
 				"Certificate has already been revoked.")
@@ -2690,7 +2690,7 @@ func (wfe *WebFrontEndImpl) processRevocation(
 		return prob
 	}
 
-	wfe.db.RevokeCertificate(&core.RevokedCertificate{
+	wfe.Db.RevokeCertificate(&core.RevokedCertificate{
 		Certificate: cert,
 		RevokedAt:   time.Now(),
 		Reason:      revokeCertReq.Reason,
@@ -2739,7 +2739,7 @@ func (wfe *WebFrontEndImpl) verifyEAB(
 
 	//3.  Retrieve the MAC key corresponding to the key identifier in the
 	//    "kid" field
-	key, ok := wfe.db.GetExtenalAccountKeyByID(keyID)
+	key, ok := wfe.Db.GetExtenalAccountKeyByID(keyID)
 	if !ok {
 		return nil, acme.UnauthorizedProblem(
 			"the field 'kid' references a key that is not known to the ACME server")
@@ -2755,11 +2755,11 @@ func (wfe *WebFrontEndImpl) verifyEAB(
 	//5.  Verify that the payload of the JWS represents the same key as was
 	//    used to verify the outer JWS (i.e., the "jwk" field of the outer
 	//    JWS)
-	if prob := wfe.verifyEABMatchesKey(payload, outerPostData.jwk); prob != nil {
+	if prob := wfe.verifyEABMatchesKey(payload, outerPostData.Jwk); prob != nil {
 		return nil, prob
 	}
 
-	wfe.log.Printf("Successful newAccount Binding with CA using kid %q", keyID)
+	wfe.Log.Printf("Successful newAccount Binding with CA using kid %q", keyID)
 
 	return newAcctReq.ExternalAccountBinding, nil
 }

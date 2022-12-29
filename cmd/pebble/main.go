@@ -40,6 +40,10 @@ type config struct {
 	}
 }
 
+//AAG: using this global variable to integrate wfe instance (from here) with newchallenge.go
+//when creating a new package for the newchallenge, it will become inacessible
+var GlobalWebFrontEnd *wfe.WebFrontEndImpl
+
 func main() {
 	configFile := flag.String(
 		"config",
@@ -238,6 +242,9 @@ func main() {
 		//creates a handler (not actually needed but it's here if we need endpoints in the future)
 		//newChallengeHandler := newchallenge.handlePQOrder
 		
+		//grabs WFE instance
+		GlobalWebFrontEnd = &wfeImpl
+
 		//starts pq-order endpoint in a different TLS config (requires client auth).
 		go func() {
 			http.HandleFunc(string(wfe.NewChallengePath), HandlePQOrder)
