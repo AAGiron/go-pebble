@@ -839,9 +839,14 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 		wrappedIssuer = ca.GenWrappedIssuer(chain, certPSK, wrappedCSRPub.WrapAlgorithm)
 	} else {
 		wrappedIssuer = nil
+		//Verify CSR 
+		if err := csr.CheckSignature(); err != nil {
+			ca.log.Printf("Error: unable to verify regular (non-wrapped) CSR : %s", err.Error())
+			return 
+		}
 	}
-	// TODO: If public key algorithm is PQC, verify the CSR signature
 	
+
 	cert, err := ca.newCertificate(csr.DNSNames, csr.IPAddresses, csr.PublicKey, order.AccountID, order.NotBefore, order.NotAfter, wrappedIssuer)
 	if err != nil {
 		ca.log.Printf("Error: unable to issue order: %s", err.Error())
