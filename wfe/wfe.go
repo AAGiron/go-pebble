@@ -158,7 +158,7 @@ type WebFrontEndImpl struct {
 	authzReusePercent int
 	ordersPerPage     int
 	va                *va.VAImpl
-	ca                *ca.CAImpl
+	Ca                *ca.CAImpl
 	strict            bool
 	requireEAB        bool
 	//new acme challenge integrations
@@ -234,7 +234,7 @@ func New(
 		authzReusePercent: authzReusePercent,
 		ordersPerPage:     ordersPerPage,
 		va:                va,
-		ca:                ca,
+		Ca:                ca,
 		strict:            strict,
 		requireEAB:        requireEAB,
 	}
@@ -385,7 +385,7 @@ func (wfe *WebFrontEndImpl) handleCert(
 
 		// Add links to alternate roots
 		basePath := wfe.RelativeEndpoint(request, relPath)
-		for i := 0; i < wfe.ca.GetNumberOfRootCerts(); i++ {
+		for i := 0; i < wfe.Ca.GetNumberOfRootCerts(); i++ {
 			if no == i {
 				continue
 			}
@@ -423,7 +423,7 @@ func (wfe *WebFrontEndImpl) handleKey(
 
 		// Add links to alternate root keys
 		basePath := wfe.RelativeEndpoint(request, relPath)
-		for i := 0; i < wfe.ca.GetNumberOfRootCerts(); i++ {
+		for i := 0; i < wfe.Ca.GetNumberOfRootCerts(); i++ {
 			if no == i {
 				continue
 			}
@@ -541,10 +541,10 @@ func (wfe *WebFrontEndImpl) Handler() http.Handler {
 func (wfe *WebFrontEndImpl) ManagementHandler() http.Handler {
 	m := http.NewServeMux()
 	// GET only handlers
-	wfe.HandleManagementFunc(m, RootCertPath, wfe.handleCert(wfe.ca.GetRootCert, RootCertPath))
-	wfe.HandleManagementFunc(m, rootKeyPath, wfe.handleKey(wfe.ca.GetRootKey, rootKeyPath))
-	wfe.HandleManagementFunc(m, intermediateCertPath, wfe.handleCert(wfe.ca.GetIntermediateCert, intermediateCertPath))
-	wfe.HandleManagementFunc(m, intermediateKeyPath, wfe.handleKey(wfe.ca.GetIntermediateKey, intermediateKeyPath))
+	wfe.HandleManagementFunc(m, RootCertPath, wfe.handleCert(wfe.Ca.GetRootCert, RootCertPath))
+	wfe.HandleManagementFunc(m, rootKeyPath, wfe.handleKey(wfe.Ca.GetRootKey, rootKeyPath))
+	wfe.HandleManagementFunc(m, intermediateCertPath, wfe.handleCert(wfe.Ca.GetIntermediateCert, intermediateCertPath))
+	wfe.HandleManagementFunc(m, intermediateKeyPath, wfe.handleKey(wfe.Ca.GetIntermediateKey, intermediateKeyPath))
 	wfe.HandleManagementFunc(m, certStatusBySerial, wfe.handleCertStatusBySerial)
 	return m
 }
@@ -1979,7 +1979,7 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 
 	// Ask the CA to complete the order in a separate goroutine.
 	wfe.Log.Printf("Order %s is fully authorized. Processing finalization", orderID)
-	go wfe.ca.CompleteOrder(existingOrder)
+	go wfe.Ca.CompleteOrder(existingOrder)
 
 	// Set the existingOrder to processing before displaying to the user
 	existingOrder.Status = acme.StatusProcessing

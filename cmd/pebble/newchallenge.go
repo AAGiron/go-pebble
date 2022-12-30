@@ -24,11 +24,10 @@ import (
 //store a PQOrder in the DB. Follows wfe.go and memorystore.go
 func storePQOrder(rw http.ResponseWriter, orderID string, 
 					csrDNSs []string, csrIPs []net.IP,
-					accountID string) (*core.Order){
+					accountID string, parsedCSR *x509.CertificateRequest) (*core.Order){
 	grabbedWFE := *GlobalWebFrontEnd
-	var newOrder acme.Order
 
-	//populate not after and notBefore from CSR?
+	//populate not after and notBefore from CSR? In newOrder
 
 	//change unique names to acme.identifier object
 	var uniquenames []acme.Identifier
@@ -39,19 +38,22 @@ func storePQOrder(rw http.ResponseWriter, orderID string,
 		uniquenames = append(uniquenames, acme.Identifier{Value: ip.String(), Type: acme.IdentifierIP})
 	}
 
-	expires := time.Now().AddDate(0, 0, 1)
+	expires := time.Now().AddDate(0, 0, 1) 
 	//maybe this could be checked in the future (new() instead of pointing to the struct)	
 	order := &core.Order{
-		ID:        orderID,
-		AccountID: accountID,
+		ID:        		 orderID,
+		AccountID: 		 accountID,
 		Order: acme.Order{
-			Status:  acme.StatusValid,
-			Expires: expires.UTC().Format(time.RFC3339),
+			Status:  	 acme.StatusValid,
+			Expires: 	 expires.UTC().Format(time.RFC3339),
 			Identifiers: uniquenames,
-			NotBefore:   newOrder.NotBefore,
-			NotAfter:    newOrder.NotAfter,
+			NotBefore:   time.Now().String(),
+			NotAfter:    time.Now().AddDate(0, 0, 90).String(), //let's encrypt example
 		},
-		ExpiresDate: expires,
+		ExpiresDate: 	 expires,
+		BeganProcessing: true, //need this in ca.go CompleteOrder
+		ParsedCSR: 		 parsedCSR,
+		//AuthorizationObjects: []*Authorization hope that range order.AuthorizationObjects returns 0 in ca.go
 	}
 
 	//Add order to the WFE db
@@ -66,17 +68,16 @@ func storePQOrder(rw http.ResponseWriter, orderID string,
 	return order
 }
 
-func issuePQCert(){
-	fmt.Println("IMPLEMENT issuePQCert")
-	return
+//wrapper to call issuance from ca.go
+func issuePQCert(order *core.Order){
+	grabbedWFE := *GlobalWebFrontEnd
+
+	//calls ca.go's Complete Order using go routine
+	go grabbedWFE.Ca.CompleteOrder(order) 
 }
 
-//might add ctx Context in the future (to grab account data)
-//might need wfe originally created by the running instance of Pebble
 //This function depends on GlobalWebFrontEnd variable (main.go)
 func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
-	fmt.Fprint( rw, "Hello Custom World!\n" )
-
 	
 	if GlobalWebFrontEnd == nil {
 		fmt.Fprint( rw, "No access to WFE and CA information... :(\n" )
@@ -145,7 +146,7 @@ func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 		return
 	}
 	//store the valid order in the DB.
-	existingOrder := storePQOrder(rw, orderID,csrDNSs, csrIPs, existingAcct.ID)
+	existingOrder := storePQOrder(rw, orderID,csrDNSs, csrIPs, existingAcct.ID, parsedCSR)
 	if existingOrder == nil {
 		grabbedWFE.SendError(acme.InternalErrorProblem("Error saving order"), rw)
 		return 
@@ -156,9 +157,10 @@ func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 
 	//5. Issue the certificate (CompleteOrder(existingOrder))
 	existingOrder.Status = acme.StatusValid
-	issuePQCert()
+	issuePQCert(existingOrder)
 
-	// Prepare the order for display as JSON
+	//Prepare the order for display as JSON
+	//6. and create URL for download.
 	orderReq := grabbedWFE.OrderForDisplay(existingOrder, req)	      //export orderPath //in wfe?
 	orderURL := grabbedWFE.RelativeEndpoint(req, fmt.Sprintf("%s%s", "/my-order/", existingOrder.ID))
 	rw.Header().Add("Location", orderURL)
@@ -169,8 +171,6 @@ func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 	}
 
 }
-
-
 
 
 
