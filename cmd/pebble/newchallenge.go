@@ -162,8 +162,8 @@ func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 	//Prepare the order for display as JSON
 	//6. and create URL for download.
 	orderReq := grabbedWFE.OrderForDisplay(existingOrder, req)	      //export orderPath //in wfe?
-	orderURL := grabbedWFE.RelativeEndpoint(req, fmt.Sprintf("%s%s", "/my-order/", existingOrder.ID))
-	rw.Header().Add("Location", orderURL)
+	//orderURL := grabbedWFE.RelativeEndpoint(req, fmt.Sprintf("%s%s", "/my-order/", existingOrder.ID))
+	//rw.Header().Add("Location", orderURL)
 	err = grabbedWFE.WriteJSONResponse(rw, http.StatusOK, orderReq)
 	if err != nil {
 		grabbedWFE.SendError(acme.InternalErrorProblem("Error marshaling order"), rw)
