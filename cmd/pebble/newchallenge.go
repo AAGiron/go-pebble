@@ -71,9 +71,7 @@ func storePQOrder(rw http.ResponseWriter, orderID string,
 //wrapper to call issuance from ca.go
 func issuePQCert(order *core.Order){
 	grabbedWFE := *GlobalWebFrontEnd
-
-	//calls ca.go's Complete Order using go routine
-	go grabbedWFE.Ca.CompleteOrder(order) 
+	grabbedWFE.Ca.CompleteOrder(order) 
 }
 
 //This function depends on GlobalWebFrontEnd variable (main.go)
