@@ -43,6 +43,8 @@ type config struct {
 //AAG: using this global variable to integrate wfe instance (from here) with newchallenge.go
 //when creating a new package for the newchallenge, it will become inacessible
 var GlobalWebFrontEnd *wfe.WebFrontEndImpl
+//now creating a global access to create PQOrderCA
+var PQOrderCA *ca.CAImpl
 
 func main() {
 	configFile := flag.String(
@@ -112,6 +114,16 @@ func main() {
 		false,
 		"By setting this flag to true, the ACME pq-order/ endpoint will be activated.",			
 	)
+	pqOrderRoot := flag.String(
+		"pqorderroot",
+		"",
+		"A Root CA and Issuer CA will be created for pq-order/ so this flag specifies which PQC algorithm will be used (root CA).",			
+	)
+	pqOrderIssuer := flag.String(
+		"pqorderissuer",
+		"",
+		"A Root CA and Issuer CA will be created for pq-order/ so this flag specifies which PQC algorithm will be used (issuer CA).",
+	)
 	
 
 	flag.Parse()
@@ -157,7 +169,7 @@ func main() {
 	}
 
 	db := db.NewMemoryStore()
-	ca := ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqChain, *hybrid)
+	caImpl := ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqChain, *hybrid)
 	va := va.New(logger, c.Pebble.HTTPPort, c.Pebble.TLSPort, *strictMode, *resolverAddress)
 
 	for keyID, key := range c.Pebble.ExternalAccountMACKeys {
@@ -170,7 +182,7 @@ func main() {
 		cmd.FailOnError(err, "Failed to add domain to block list")
 	}
 
-	wfeImpl := wfe.New(logger, db, va, ca, *strictMode, c.Pebble.ExternalAccountBindingRequired)
+	wfeImpl := wfe.New(logger, db, va, caImpl, *strictMode, c.Pebble.ExternalAccountBindingRequired)
 	muxHandler := wfeImpl.Handler()
 
 	if c.Pebble.ManagementListenAddress != "" {
@@ -244,6 +256,15 @@ func main() {
 		
 		//grabs WFE instance
 		GlobalWebFrontEnd = &wfeImpl
+
+		//creates a second CA chain (PQC one for the new challenge)
+		if *pqOrderRoot == "" || *pqOrderIssuer == ""{
+			panic("If new challenge you must provide --pqOrderRoot and --pqOrderIssuer algorithms")
+		}
+		pqOrderChain := []string{*pqOrderRoot, *pqOrderIssuer, *pqOrderIssuer}			
+		//sets a new CA (Root and Interm. certs from pqOrderChain) but keeps DB and other data
+		//PQOrderCAs = ca.PQOrderCAs(wfeImpl.Ca, *dirToSaveRoot, pqOrderChain, *hybrid, chainLength, alternateRoots)
+		PQOrderCA = ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqOrderChain, *hybrid)
 
 		//starts pq-order endpoint in a different TLS config (requires client auth).
 		go func() {

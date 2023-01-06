@@ -8,9 +8,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	//"encoding/pem"
-	"github.com/letsencrypt/pebble/v2/acme"
-	"github.com/letsencrypt/pebble/v2/core"
 	"net"
 	"strings"
 	"sort"
@@ -18,6 +15,8 @@ import (
 	"crypto/rand"
 	"io"
 	"time"
+	"github.com/letsencrypt/pebble/v2/acme"
+	"github.com/letsencrypt/pebble/v2/core"
 )
 
 
@@ -74,15 +73,19 @@ func issuePQCert(order *core.Order){
 	grabbedWFE.Ca.CompleteOrder(order) 
 }
 
-//This function depends on GlobalWebFrontEnd variable (main.go)
+///////// Entry point
+// This function depends on GlobalWebFrontEnd variable (main.go)
 func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 	
 	if GlobalWebFrontEnd == nil {
-		fmt.Fprint( rw, "No access to WFE and CA information... :(\n" )
+		fmt.Fprint(rw, "No access to WFE and CA information... :(\n")
 		return
 	}
 
 	grabbedWFE := *GlobalWebFrontEnd //conteudo de pointer?
+
+	//0. First thing is to replace the Classic CA (Root and Intermediates) by PQC ones	
+	grabbedWFE.Ca = PQOrderCA
 
 	//1. Parse request	
 	grabbedWFE.Log.Printf("Verifying a POST received at /pq-order...")
