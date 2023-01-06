@@ -236,8 +236,8 @@ func main() {
 			PQTLSEnabled: true,			
 			IgnoreSigAlg: true,
 			InsecureSkipVerify: false,
-			ClientAuth: tls.RequireAndVerifyClientCert, //mandatory Client Auth
-			//ClientAuth: tls.VerifyClientCertIfGiven, //optional Client Auth		
+			//ClientAuth: tls.RequireAndVerifyClientCert, //mandatory Client Auth
+			ClientAuth: tls.VerifyClientCertIfGiven, //optional Client Auth		
 		}
 		//creates a handler (not actually needed but it's here if we need endpoints in the future)
 		//newChallengeHandler := newchallenge.handlePQOrder

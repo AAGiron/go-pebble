@@ -39,7 +39,7 @@ func storePQOrder(rw http.ResponseWriter, orderID string,
 	}
 
 	expires := time.Now().AddDate(0, 0, 1) 
-	//maybe this could be checked in the future (new() instead of pointing to the struct)	
+	//maybe this could be checked in the future (new() instead of pointing to the struct)
 	order := &core.Order{
 		ID:        		 orderID,
 		AccountID: 		 accountID,
@@ -47,8 +47,8 @@ func storePQOrder(rw http.ResponseWriter, orderID string,
 			Status:  	 acme.StatusValid,
 			Expires: 	 expires.UTC().Format(time.RFC3339),
 			Identifiers: uniquenames,
-			NotBefore:   time.Now().String(),
-			NotAfter:    time.Now().AddDate(0, 0, 90).String(), //let's encrypt example
+			NotBefore:   time.Now().Format(time.RFC3339),
+			NotAfter:    time.Now().AddDate(0, 0, 90).Format(time.RFC3339), //let's encrypt example
 		},
 		ExpiresDate: 	 expires,
 		BeganProcessing: true, //need this in ca.go CompleteOrder
@@ -86,21 +86,21 @@ func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 
 	grabbedWFE := *GlobalWebFrontEnd //conteudo de pointer?
 
-	//1. Parse request
+	//1. Parse request	
+	grabbedWFE.Log.Printf("Verifying a POST received at /pq-order...")
 	//parses JWS in the request, retrieves account Pk (if found) and verifies the signature
 	postData, prob := grabbedWFE.VerifyPOST(req, grabbedWFE.LookupJWK)
 	if prob != nil {
 		grabbedWFE.SendError(prob, rw)
 		return
 	}
-	
 
 	//2. There is no order (yet), so go straight parsing and processing CSR 
 	//to issue a PQ certificate
 	var finalizeMessage struct {
 		CSR string
 	}
-	//might throw an error here: our finalize has more things in the body
+	//might throw an error here: our finalize has more things in the body	
 	err := json.Unmarshal(postData.Body, &finalizeMessage)
 	if err != nil {
 		grabbedWFE.SendError(acme.MalformedProblem(fmt.Sprintf(
@@ -126,7 +126,6 @@ func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 	//matches the domain asked in the CSR
 	
 	////////////////////////////////////////////////////////////////////////////////
-	//we can get csr info, but the TLS-layer certificate is not here... it's something like AJP protocol	
 	csrDNSs := UniqueLowerNames(parsedCSR.DNSNames)
 	csrIPs := UniqueIPs(parsedCSR.IPAddresses)
 
@@ -153,7 +152,7 @@ func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 	}
 
 	//log that so far so good
-	grabbedWFE.Log.Printf("Request for %s is fully authorized. Issuing certificate...", existingAcct)
+	grabbedWFE.Log.Printf("Request for %s is fully authorized. Issuing certificate...", existingAcct.ID)
 
 	//5. Issue the certificate (CompleteOrder(existingOrder))
 	existingOrder.Status = acme.StatusValid
