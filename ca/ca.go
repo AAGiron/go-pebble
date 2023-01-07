@@ -87,31 +87,31 @@ type CAImpl struct {
 	db               *db.MemoryStore
 	ocspResponderURL string
 
-	chains []*chain
+	Chains []*chain
 
 	certValidityPeriod uint
 }
 
 type chain struct {
-	root          *issuer
-	intermediates []*issuer
+	Root          *issuer
+	Intermediates []*issuer
 	wrapped       []*issuer
 }
 
 func (c *chain) String() string {
-	fullchain := append(c.intermediates, c.root)
+	fullchain := append(c.Intermediates, c.Root)
 	n := len(fullchain)
 
 	names := make([]string, n)
 	for i := range fullchain {
-		names[n-i-1] = fullchain[i].cert.Cert.Subject.CommonName
+		names[n-i-1] = fullchain[i].Cert.Cert.Subject.CommonName
 	}
 	return strings.Join(names, " -> ")
 }
 
 type issuer struct {
 	key  crypto.Signer
-	cert *core.Certificate
+	Cert *core.Certificate
 }
 
 func makeSerial() *big.Int {
@@ -226,9 +226,9 @@ func (ca *CAImpl) makeRootCert(
 
 	var signerKey crypto.Signer
 	var parent *x509.Certificate
-	if signer != nil && signer.key != nil && signer.cert != nil && signer.cert.Cert != nil {
+	if signer != nil && signer.key != nil && signer.Cert != nil && signer.Cert.Cert != nil {
 		signerKey = signer.key
-		parent = signer.cert.Cert
+		parent = signer.Cert.Cert
 	} else {
 		signerKey = subjectKey
 		parent = template
@@ -250,9 +250,9 @@ func (ca *CAImpl) makeRootCert(
 		Cert: cert,
 		DER:  der,
 	}
-	if signer != nil && signer.cert != nil {
+	if signer != nil && signer.Cert != nil {
 		newCert.IssuerChains = make([][]*core.Certificate, 1)
-		newCert.IssuerChains[0] = []*core.Certificate{signer.cert}
+		newCert.IssuerChains[0] = []*core.Certificate{signer.Cert}
 	}
 	_, err = ca.db.AddCertificate(newCert)
 	if err != nil {
@@ -282,7 +282,7 @@ func (ca *CAImpl) makeWrappedCert(
 	}	
 	
 	signerKey := signer.key
-	parent := signer.cert.Cert
+	parent := signer.Cert.Cert
 
 	subjectPk := subjectKey.Public()	
 	
@@ -326,7 +326,7 @@ func (ca *CAImpl) makeWrappedCert(
 	}
 	
 	newCert.IssuerChains = make([][]*core.Certificate, 1)
-	newCert.IssuerChains[0] = []*core.Certificate{signer.cert}
+	newCert.IssuerChains[0] = []*core.Certificate{signer.Cert}
 	
 	_, err = ca.db.AddCertificate(newCert)
 	if err != nil {
@@ -357,7 +357,7 @@ func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	ca.log.Printf("Generated new root issuer %s with serial %s and SKI %x\n", rc.Cert.Subject, rc.ID, subjectKeyID)
 	return &issuer{
 		key:  rk,
-		cert: rc,
+		Cert: rc,
 	}, nil
 }
 
@@ -390,7 +390,7 @@ func (ca *CAImpl) newPqRootIssuer(name, rootSig string, hybrid bool) (*issuer, e
 	ca.log.Printf("Generated new root issuer %s with serial %s and SKI %x\n", rc.Cert.Subject, rc.ID, subjectKeyID)
 	return &issuer{
 		key:  rk,
-		cert: rc,
+		Cert: rc,
 	}, nil
 }
 
@@ -406,7 +406,7 @@ func (ca *CAImpl) newIntermediateIssuer(root *issuer, intermediateKey crypto.Sig
 	ca.log.Printf("Generated new intermediate issuer %s with serial %s and SKI %x\n", ic.Cert.Subject, ic.ID, subjectKeyID)
 	return &issuer{
 		key:  intermediateKey,
-		cert: ic,
+		Cert: ic,
 	}, nil
 }
 func (ca *CAImpl) newWrappedIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte, psk []byte, wrapAlgorithm string) (*issuer, error) {
@@ -421,7 +421,7 @@ func (ca *CAImpl) newWrappedIssuer(root *issuer, intermediateKey crypto.Signer, 
 	ca.log.Printf("Generated new intermediate issuer %s with serial %s and SKI %x\n", ic.Cert.Subject, ic.ID, subjectKeyID)
 	return &issuer{
 		key:  intermediateKey,
-		cert: ic,
+		Cert: ic,
 	}, nil
 }
 
@@ -438,7 +438,7 @@ func (ca *CAImpl) newPqIntermediateIssuer(root *issuer, intermediateKey crypto.S
 	ca.log.Printf("Generated new intermediate issuer %s with serial %s and SKI %x\n", ic.Cert.Subject, ic.ID, subjectKeyID)
 	return &issuer{
 		key:  intermediateKey,
-		cert: ic,
+		Cert: ic,
 	}, nil
 }
 // newChain generates a new issuance chain, including a root certificate and numIntermediates intermediates (at least 1).
@@ -461,7 +461,7 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 		if err != nil {
 			log.Fatalf("Failed to open cert.pem for writing: %v", err)
 		}
-		if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: root.cert.DER}); err != nil {
+		if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: root.Cert.DER}); err != nil {
 			log.Fatalf("Failed to write data to cert.pem: %v", err)
 		}
 		if err := certOut.Close(); err != nil {
@@ -498,8 +498,8 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 	wrappeds := make([]*issuer, 0)
 
 	c := &chain{
-		root:          root,
-		intermediates: intermediates,
+		Root:          root,
+		Intermediates: intermediates,
 		wrapped:       wrappeds,
 	}
 	ca.log.Printf("Generated issuance chain: %s", c)
@@ -525,10 +525,10 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 	if wrappedIssuer != nil {
 		defaultChain = []*issuer{wrappedIssuer}
 	} else {
-		defaultChain = ca.chains[0].intermediates
+		defaultChain = ca.Chains[0].Intermediates
 	}
 
-	if len(defaultChain) == 0 || defaultChain[0].cert == nil {
+	if len(defaultChain) == 0 || defaultChain[0].Cert == nil {
 		return nil, fmt.Errorf("cannot sign certificate - nil issuer")
 	}
 	issuer := defaultChain[0]
@@ -580,18 +580,18 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 		template.OCSPServer = []string{ca.ocspResponderURL}
 	}
 
-	sctExt, err := x509.CreateSCT(rand.Reader, template, issuer.cert.Cert, key, issuer.key)
+	sctExt, err := x509.CreateSCT(rand.Reader, template, issuer.Cert.Cert, key, issuer.key)
 	if err != nil {
 		return nil, err
 	}
 
 	if OCSPResponseFilePath != "" {
-		ocspResponse, _ = ocsp.CreateOCSPResponse(rand.Reader, issuer.cert.Cert, issuer.key)
+		ocspResponse, _ = ocsp.CreateOCSPResponse(rand.Reader, issuer.Cert.Cert, issuer.key)
 	}
 
 	template.ExtraExtensions = []pkix.Extension{sctExt}	
 
-	der, err := x509.CreateCertificate(rand.Reader, template, issuer.cert.Cert, key, issuer.key)
+	der, err := x509.CreateCertificate(rand.Reader, template, issuer.Cert.Cert, key, issuer.key)
 	if err != nil {
 		return nil, err
 	}
@@ -600,25 +600,25 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 		return nil, err
 	}
 
-	issuers := make([][]*core.Certificate, len(ca.chains))
+	issuers := make([][]*core.Certificate, len(ca.Chains))
 
 	if wrappedIssuer == nil {
-		for i := 0; i < len(ca.chains); i++ {			
-			issuerChain := make([]*core.Certificate, len(ca.chains[i].intermediates))
-			for j, cert := range ca.chains[i].intermediates {
-				issuerChain[j] = cert.cert
+		for i := 0; i < len(ca.Chains); i++ {			
+			issuerChain := make([]*core.Certificate, len(ca.Chains[i].Intermediates))
+			for j, cert := range ca.Chains[i].Intermediates {
+				issuerChain[j] = cert.Cert
 			}
 					
 			issuers[i] = issuerChain
 		}
 	} else {
-		for i := 0; i < len(ca.chains); i++ {			
-			issuerChain := make([]*core.Certificate, len(ca.chains[i].intermediates) + 1)
+		for i := 0; i < len(ca.Chains); i++ {			
+			issuerChain := make([]*core.Certificate, len(ca.Chains[i].Intermediates) + 1)
 			
-			issuerChain[0] = wrappedIssuer.cert
+			issuerChain[0] = wrappedIssuer.Cert
 			
-			for j, cert := range ca.chains[i].intermediates {
-				issuerChain[j+1] = cert.cert
+			for j, cert := range ca.Chains[i].Intermediates {
+				issuerChain[j+1] = cert.Cert
 			}			
 					
 			issuers[i] = issuerChain
@@ -663,7 +663,7 @@ func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject 
 		if err != nil {
 			log.Fatalf("Failed to open cert.pem for writing: %v", err)
 		}
-		if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: root.cert.DER}); err != nil {
+		if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: root.Cert.DER}); err != nil {
 			log.Fatalf("Failed to write data to cert.pem: %v", err)
 		}
 		if err := certOut.Close(); err != nil {
@@ -710,8 +710,8 @@ func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject 
 	wrappeds := make([]*issuer, 0)
 
 	c := &chain{
-		root:          root,
-		intermediates: intermediates,
+		Root:          root,
+		Intermediates: intermediates,
 		wrapped:       wrappeds,
 	}
 	ca.log.Printf("Generated issuance chain: %s", c)
@@ -741,9 +741,9 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
 		}
-		ca.chains = make([]*chain, 1+alternateRoots)
-		for i := 0; i < len(ca.chains); i++ {
-			ca.chains[i] = ca.newChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot)
+		ca.Chains = make([]*chain, 1+alternateRoots)
+		for i := 0; i < len(ca.Chains); i++ {
+			ca.Chains[i] = ca.newChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot)
 		}
 
 	} else {
@@ -763,9 +763,9 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 			panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
 		}
 
-		ca.chains = make([]*chain, 1+alternateRoots)
-		for i := 0; i < len(ca.chains); i++ {
-			ca.chains[i] = ca.newPqChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot, pqChain, hybrid)
+		ca.Chains = make([]*chain, 1+alternateRoots)
+		for i := 0; i < len(ca.Chains); i++ {
+			ca.Chains[i] = ca.newPqChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot, pqChain, hybrid)
 		}
 		
 	}
@@ -874,12 +874,12 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 }
 
 func (ca *CAImpl) GetNumberOfRootCerts() int {
-	return len(ca.chains)
+	return len(ca.Chains)
 }
 
 func (ca *CAImpl) getChain(no int) *chain {
-	if 0 <= no && no < len(ca.chains) {
-		return ca.chains[no]
+	if 0 <= no && no < len(ca.Chains) {
+		return ca.Chains[no]
 	}
 	return nil
 }
@@ -889,7 +889,7 @@ func (ca *CAImpl) GetRootCert(no int) *core.Certificate {
 	if chain == nil {
 		return nil
 	}
-	return chain.root.cert
+	return chain.Root.Cert
 }
 
 func (ca *CAImpl) GetRootKey(no int) interface{} {
@@ -898,7 +898,7 @@ func (ca *CAImpl) GetRootKey(no int) interface{} {
 		return nil
 	}
 
-	switch key := chain.root.key.(type) {
+	switch key := chain.Root.key.(type) {
 	case *rsa.PrivateKey:
 		return key
 	
@@ -915,7 +915,7 @@ func (ca *CAImpl) GetIntermediateCert(no int) *core.Certificate {
 	if chain == nil {
 		return nil
 	}
-	return chain.intermediates[0].cert
+	return chain.Intermediates[0].Cert
 }
 
 func (ca *CAImpl) GetIntermediateKey(no int) interface{} {
@@ -924,7 +924,7 @@ func (ca *CAImpl) GetIntermediateKey(no int) interface{} {
 		return nil
 	}
 
-	switch key := chain.intermediates[0].key.(type) {
+	switch key := chain.Intermediates[0].key.(type) {
 	case *rsa.PrivateKey:
 		return key
 		
@@ -939,7 +939,7 @@ func (ca *CAImpl) GetIntermediateKey(no int) interface{} {
 func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte, wrapAlgorithm string) *issuer {
 
 	chainID := hex.EncodeToString(makeSerial().Bytes()[:3])
-	parent := c.intermediates[0]
+	parent := c.Intermediates[0]
 	// sigScheme := c.sigSchemeWrap
 
 	// k, ski, err := makeKey()
@@ -961,13 +961,13 @@ func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte, wrapAlgorithm string) *
 	n := len(c.wrapped)
 	names := make([]string, n)
 	for i := range c.wrapped {
-		names[n-i-1] = c.wrapped[i].cert.Cert.Subject.CommonName
+		names[n-i-1] = c.wrapped[i].Cert.Cert.Subject.CommonName
 	}
 	// w := strings.Join(names, ", ")
 
 	// ca.log.Printf("Generated issuance chain: %s", c)
 
-	fmt.Printf("\nPebble: Generated issuance chain: %s -> %s -> %s\n\n", c.root.cert.Cert.Subject.CommonName, c.intermediates[0].cert.Cert.Subject.CommonName, c.wrapped[0].cert.Cert.Subject.CommonName)
+	fmt.Printf("\nPebble: Generated issuance chain: %s -> %s -> %s\n\n", c.Root.Cert.Cert.Subject.CommonName, c.Intermediates[0].Cert.Cert.Subject.CommonName, c.wrapped[0].Cert.Cert.Subject.CommonName)
 
 	return wrapped
 }

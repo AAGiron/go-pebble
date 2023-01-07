@@ -17,6 +17,8 @@ import (
 	"time"
 	"github.com/letsencrypt/pebble/v2/acme"
 	"github.com/letsencrypt/pebble/v2/core"
+//	"github.com/letsencrypt/pebble/v2/ca"
+//	"github.com/huandu/go-clone"
 )
 
 
@@ -69,7 +71,7 @@ func storePQOrder(rw http.ResponseWriter, orderID string,
 
 //wrapper to call issuance from ca.go
 func issuePQCert(order *core.Order){
-	grabbedWFE := *GlobalWebFrontEnd
+	grabbedWFE := GlobalWebFrontEnd
 	grabbedWFE.Ca.CompleteOrder(order) 
 }
 
@@ -82,9 +84,10 @@ func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 		return
 	}
 
-	grabbedWFE := *GlobalWebFrontEnd //conteudo de pointer?
+	grabbedWFE := GlobalWebFrontEnd 
 
-	//0. First thing is to replace the Classic CA (Root and Intermediates) by PQC ones	
+	//0. First thing is to replace the Classic CA (Root and Intermediates) by PQC ones		
+	//grabbedWFE.Ca = clone.Slowly(PQOrderCA).(*ca.CAImpl) 
 	grabbedWFE.Ca = PQOrderCA
 
 	//1. Parse request	

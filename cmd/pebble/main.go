@@ -261,7 +261,7 @@ func main() {
 		if *pqOrderRoot == "" || *pqOrderIssuer == ""{
 			panic("If new challenge you must provide --pqOrderRoot and --pqOrderIssuer algorithms")
 		}
-		pqOrderChain := []string{*pqOrderRoot, *pqOrderIssuer, *pqOrderIssuer}			
+		pqOrderChain := []string{*pqOrderRoot, *pqOrderIssuer, *pqOrderIssuer}
 		//sets a new CA (Root and Interm. certs from pqOrderChain) but keeps DB and other data
 		//PQOrderCAs = ca.PQOrderCAs(wfeImpl.Ca, *dirToSaveRoot, pqOrderChain, *hybrid, chainLength, alternateRoots)
 		PQOrderCA = ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqOrderChain, *hybrid)
