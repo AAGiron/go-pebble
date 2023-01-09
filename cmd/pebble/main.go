@@ -2,15 +2,17 @@ package main
 
 import (
 	"crypto/tls"
-	"flag"
+	"crypto/x509"
+	"flag"	
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"encoding/pem"
 	"regexp"
 	"strconv"
 	"time"
-
+	"io"
 	"github.com/letsencrypt/pebble/v2/ca"
 	"github.com/letsencrypt/pebble/v2/cmd"
 	"github.com/letsencrypt/pebble/v2/db"
@@ -244,15 +246,26 @@ func main() {
 									strconv.Itoa(c.Pebble.PQOrderTLSPortAddress)//+string(wfe.NewChallengePath)
 		}
 
+		//we need the Root CA here also. TODO: could read from wfe.RootCertPath and remove getPebbleRootCA()
+		caCertPool := x509.NewCertPool()
+		pebbleRootCA, pebbleerr := getPebbleRootCA()
+		if pebbleerr != nil {
+			log.Fatalf("Could not complete Pebble's new Root CA download:\n\t%v", pebbleerr)
+		}
+		pemRoot, _ := pem.Decode(pebbleRootCA)
+		rootCertX509, pebbleerr := x509.ParseCertificate(pemRoot.Bytes)
+		if err != nil {
+			panic(err)
+		}
+		caCertPool.AddCert(rootCertX509)
+
 		tlsCfg := &tls.Config {
 			PQTLSEnabled: true,			
-			IgnoreSigAlg: true,
 			InsecureSkipVerify: false,
-			//ClientAuth: tls.RequireAndVerifyClientCert, //mandatory Client Auth
-			ClientAuth: tls.VerifyClientCertIfGiven, //optional Client Auth		
+			ClientAuth: tls.RequireAndVerifyClientCert, //mandatory Client Auth
+			//ClientAuth: tls.VerifyClientCertIfGiven, //optional Client Auth		
+			ClientCAs:	caCertPool,
 		}
-		//creates a handler (not actually needed but it's here if we need endpoints in the future)
-		//newChallengeHandler := newchallenge.handlePQOrder
 		
 		//grabs WFE instance
 		GlobalWebFrontEnd = &wfeImpl
@@ -313,4 +326,20 @@ func main() {
 		)
 	}
 	cmd.FailOnError(err, "Calling ListenAndServeTLS()")
+}
+
+
+//could remove this (see TODO above)
+func getPebbleRootCA()([]byte, error){	
+	requestURL := "https://localhost:15000/roots/0"
+	res, err := http.Get(requestURL)
+	if err != nil {
+		return nil, err
+	}
+
+	rootCert, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	return rootCert, nil
 }
