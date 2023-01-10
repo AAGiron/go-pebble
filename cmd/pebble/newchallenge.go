@@ -126,12 +126,17 @@ func HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 		return
 	}
 
-	//3. TODO: check if the TLS client certificate domain name 
-	//matches the domain asked in the CSR
-	
 	////////////////////////////////////////////////////////////////////////////////
 	csrDNSs := UniqueLowerNames(parsedCSR.DNSNames)
 	csrIPs := UniqueIPs(parsedCSR.IPAddresses)
+
+	//3. check if the TLS-layer client certificate domain name 
+	// matches the domain asked in the CSR
+	// if certificate.commonName matches Lego's request identifiers in the CSR 		
+	if ! (req.TLS.PeerCertificates[0].Subject.CommonName == csrDNSs[0]) {
+		fmt.Fprint(rw, "TLS client certificate common name does not match the requested CSR name.\n")
+		return
+	}
 
 	// No account key signing RFC8555 Section 11.1 (same from wfe.go)
 	existsAcctForCSRKey, _ := grabbedWFE.GetAcctByKey(parsedCSR.PublicKey)
