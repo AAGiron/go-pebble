@@ -184,6 +184,9 @@ func main() {
 		cmd.FailOnError(err, "Failed to add domain to block list")
 	}
 
+	//for the new challenge, backup the classical CA
+	wfe.ClassicalCA = caImpl
+
 	wfeImpl := wfe.New(logger, db, va, caImpl, *strictMode, c.Pebble.ExternalAccountBindingRequired)
 	muxHandler := wfeImpl.Handler()
 
@@ -276,8 +279,7 @@ func main() {
 		}
 		pqOrderChain := []string{*pqOrderRoot, *pqOrderIssuer, *pqOrderIssuer}
 		//sets a new CA (Root and Interm. certs from pqOrderChain) but keeps DB and other data
-		//PQOrderCAs = ca.PQOrderCAs(wfeImpl.Ca, *dirToSaveRoot, pqOrderChain, *hybrid, chainLength, alternateRoots)
-		PQOrderCA = ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqOrderChain, *hybrid)
+		PQOrderCA = ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqOrderChain, *hybrid)	
 
 		//starts pq-order endpoint in a different TLS config (requires client auth).
 		go func() {

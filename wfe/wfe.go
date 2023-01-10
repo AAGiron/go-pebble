@@ -167,6 +167,10 @@ type WebFrontEndImpl struct {
 
 const ToSURL = "data:text/plain,Do%20what%20thou%20wilt"
 
+//if new challenge is present, saves the original CA
+var ClassicalCA *ca.CAImpl
+
+
 func New(
 	log *log.Logger,
 	db *db.MemoryStore,
@@ -1845,8 +1849,10 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 			wfe.SendError(prob, response)
 			return
 		}
-
 	}
+
+	//if the new challenge was executed, this reverts the CA back to the original one
+	wfe.Ca = ClassicalCA
 
 	// Find the account corresponding to the key that authenticated the POST request
 	existingAcct, prob := wfe.GetAcctByKey(postData.Jwk)
