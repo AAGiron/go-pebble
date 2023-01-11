@@ -108,7 +108,8 @@ const (
 
 	// The default value when PEBBLE_WFE_AUTHZREUSE is not set, how often to try
 	// and reuse valid authorizations.
-	defaultAuthzReuse = 50
+//	defaultAuthzReuse = 50
+	defaultAuthzReuse = 0
 
 	// ordersPerPageEnvVar defines the environment variable name used to provide
 	// the number of orders to show per page. To have the WFE show 15 orders per
