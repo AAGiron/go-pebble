@@ -6,12 +6,14 @@ import (
 	"crypto"
 	"crypto/liboqs_sig"
 	"crypto/rsa"
-	"crypto/x509"
+	"crypto/x509"	
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"math/big"
@@ -109,7 +111,8 @@ const (
 	// The default value when PEBBLE_WFE_AUTHZREUSE is not set, how often to try
 	// and reuse valid authorizations.
 //	defaultAuthzReuse = 50
-	defaultAuthzReuse = 0
+//	defaultAuthzReuse = 0
+	defaultAuthzReuse = 100
 
 	// ordersPerPageEnvVar defines the environment variable name used to provide
 	// the number of orders to show per page. To have the WFE show 15 orders per
@@ -122,6 +125,7 @@ const (
 )
 
 var LoadTestFinalize bool
+var PerMessageTimingCSVPath string
 
 // newAccountRequest is the ACME account information submitted by the client
 type newAccountRequest struct {
@@ -559,6 +563,10 @@ func (wfe *WebFrontEndImpl) Directory(
 	response http.ResponseWriter,
 	request *http.Request) {
 
+	//AAG: computing processing time
+	timer := time.Now
+	start := timer()
+
 	directoryEndpoints := map[string]string{
 		"newNonce":   noncePath,
 		"newAccount": newAccountPath,
@@ -590,6 +598,12 @@ func (wfe *WebFrontEndImpl) Directory(
 	}
 
 	_, _ = response.Write(relDir)
+
+	//Computing processing time
+	elapsedTime := timer().Sub(start)
+	if PerMessageTimingCSVPath != "" {
+		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/dir")
+	}
 }
 
 func (wfe *WebFrontEndImpl) relativeDirectory(request *http.Request, directory map[string]string) ([]byte, error) {
@@ -646,6 +660,11 @@ func (wfe *WebFrontEndImpl) Nonce(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
+	
+	//AAG: computing processing time
+	timer := time.Now
+	start := timer()
+
 	statusCode := http.StatusNoContent
 	// The ACME specification says GET requets should receive http.StatusNoContent
 	// and HEAD requests should receive http.StatusOK.
@@ -668,6 +687,12 @@ func (wfe *WebFrontEndImpl) Nonce(
 	}
 
 	response.WriteHeader(statusCode)
+
+	//Computing processing time
+	elapsedTime := timer().Sub(start)
+	if PerMessageTimingCSVPath != "" {
+		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/newNonce")
+	}
 }
 
 func (wfe *WebFrontEndImpl) ParseJWS(body string) (*jose.JSONWebSignature, error) {
@@ -1044,6 +1069,11 @@ func (wfe *WebFrontEndImpl) UpdateAccount(
 		return
 	}
 
+
+	//AAG: chekpoint print
+	fmt.Println("-----------------------------------------------------")
+	fmt.Println("Received HTTP request at UPDATE ACCOUNT endpoint function.")
+
 	// updateAcctReq is the ACME account information submitted by the client
 	var updateAcctReq struct {
 		Contact []string `json:"contact"`
@@ -1137,6 +1167,10 @@ func (wfe *WebFrontEndImpl) ListOrders(
 		wfe.SendError(prob, response)
 		return
 	}
+
+	//AAG: chekpoint print
+	fmt.Println("-----------------------------------------------------")
+	fmt.Println("Received HTTP request at LIST ORDERS endpoint function.")
 
 	existingAcct, prob := wfe.validPOSTAsGET(postData)
 	if prob != nil {
@@ -1313,6 +1347,10 @@ func (wfe *WebFrontEndImpl) NewAccount(
 	response http.ResponseWriter,
 	request *http.Request) {
 
+	//AAG: computing processing time
+	timer := time.Now
+	start := timer()
+
 	// We use extractJWK rather than LookupJWK here because the account is not yet
 	// created, so the user provides the full key in a JWS header rather than
 	// referring to an existing key.
@@ -1409,6 +1447,12 @@ func (wfe *WebFrontEndImpl) NewAccount(
 	if err != nil {
 		wfe.SendError(acme.InternalErrorProblem("Error marshaling account"), response)
 		return
+	}
+
+	//Computing processing time
+	elapsedTime := timer().Sub(start)
+	if PerMessageTimingCSVPath != "" {
+		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/newAccount")
 	}
 }
 
@@ -1652,6 +1696,10 @@ func (wfe *WebFrontEndImpl) NewOrder(
 	response http.ResponseWriter,
 	request *http.Request) {
 
+	//AAG: computing processing time
+	timer := time.Now
+	start := timer()
+	
 	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
 		wfe.SendError(prob, response)
@@ -1749,6 +1797,12 @@ func (wfe *WebFrontEndImpl) NewOrder(
 		wfe.SendError(acme.InternalErrorProblem("Error marshaling order"), response)
 		return
 	}
+
+	//Computing processing time
+	elapsedTime := timer().Sub(start)
+	if PerMessageTimingCSVPath != "" {
+		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/newOrder")
+	}
 }
 
 // OrderForDisplay preps a *core.Order for display by populating some fields
@@ -1798,6 +1852,11 @@ func (wfe *WebFrontEndImpl) Order(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
+
+	//AAG: computing processing time
+	timer := time.Now
+	start := timer()
+
 	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
 		wfe.SendError(prob, response)
@@ -1836,12 +1895,22 @@ func (wfe *WebFrontEndImpl) Order(
 		wfe.SendError(acme.InternalErrorProblem("Error marshaling order"), response)
 		return
 	}
+
+	//Computing processing time
+	elapsedTime := timer().Sub(start)
+	if PerMessageTimingCSVPath != "" {
+		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/OrderEndpointForDisplay")
+	}
 }
 
 func (wfe *WebFrontEndImpl) FinalizeOrder(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
+
+	//AAG: computing processing time
+	timer := time.Now
+	start := timer()
 
 	// Verify the POST request
 	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
@@ -2011,6 +2080,12 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 		wfe.SendError(acme.InternalErrorProblem("Error marshaling order"), response)
 		return
 	}
+
+	//Computing processing time
+	elapsedTime := timer().Sub(start)
+	if PerMessageTimingCSVPath != "" {
+		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/finalize")
+	}
 }
 
 // prepAuthorizationForDisplay prepares the provided acme.Authorization for
@@ -2056,6 +2131,11 @@ func (wfe *WebFrontEndImpl) Authz(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
+	
+	//AAG: computing processing time
+	timer := time.Now
+	start := timer()
+
 	// There are two types of requests we might get:
 	//   A) a POST to update the authorization
 	//   B) a POST-as-GET to get the authorization
@@ -2137,12 +2217,22 @@ func (wfe *WebFrontEndImpl) Authz(
 		wfe.SendError(acme.InternalErrorProblem("Error marshaling authz"), response)
 		return
 	}
+
+	//Computing processing time
+	elapsedTime := timer().Sub(start)
+	if PerMessageTimingCSVPath != "" {
+		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/authZ")
+	}
 }
 
 func (wfe *WebFrontEndImpl) Challenge(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
+	//AAG: computing processing time
+	timer := time.Now
+	start := timer()
+
 	// There are two possibilities:
 	// A) request is a POST to begin a challenge
 	// B) request is a POST-as-GET to poll a challenge
@@ -2163,6 +2253,11 @@ func (wfe *WebFrontEndImpl) Challenge(
 	var account *core.Account
 	if !postData.postAsGet {
 		wfe.updateChallenge(postData, response, request)
+			//Computing processing time
+			elapsedTime := timer().Sub(start)
+			if PerMessageTimingCSVPath != "" {
+				writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/chalZ")
+			}
 		return
 	} else {
 		// Otherwise it is case B)
@@ -2187,6 +2282,12 @@ func (wfe *WebFrontEndImpl) Challenge(
 	if err != nil {
 		wfe.SendError(acme.InternalErrorProblem("Error marshaling challenge"), response)
 		return
+	}
+
+	//Computing processing time
+	elapsedTime := timer().Sub(start)
+	if PerMessageTimingCSVPath != "" {
+		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/chalZ")
 	}
 }
 
@@ -2426,6 +2527,10 @@ func (wfe *WebFrontEndImpl) Certificate(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
+	//AAG: computing processing time
+	timer := time.Now
+	start := timer()
+
 	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
 		wfe.SendError(prob, response)
@@ -2467,6 +2572,12 @@ func (wfe *WebFrontEndImpl) Certificate(
 	response.Header().Set("Content-Type", "application/pem-certificate-chain; charset=utf-8")
 	response.WriteHeader(http.StatusOK)
 	_, _ = response.Write(cert.Chain(no))
+
+	//Computing processing time
+	elapsedTime := timer().Sub(start)
+	if PerMessageTimingCSVPath != "" {
+		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/certDownload")
+	}
 }
 
 func (wfe *WebFrontEndImpl) WriteJSONResponse(response http.ResponseWriter, status int, v interface{}) error {
@@ -2837,4 +2948,34 @@ func (wfe *WebFrontEndImpl) verifyEABMatchesKey(payload []byte, jwk *jose.JSONWe
 	}
 
 	return nil
+}
+
+
+//store measured time function
+func writeElapsedTime(elapsedTime float64, contextEndpoint string) {
+	var toWrite []string
+
+	csvFile, err := os.OpenFile(PerMessageTimingCSVPath, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		log.Fatalf("failed opening file: %s", err)
+	}
+	
+	csvwriter := csv.NewWriter(csvFile)
+	csvReader := csv.NewReader(csvFile)
+	_, err = csvReader.Read()
+	if err == io.EOF {	///getDir", "/newNonce", "/newAccount", "/newOrder", "/authZ", "/chalZ", "/authZ",
+		toWrite = []string{"ContextEndpoint", "Time (ms)"}
+		if err := csvwriter.Write(toWrite); err != nil {
+			log.Fatalf("error writing record to file. err: %s", err)
+		}
+	}
+
+	toWrite = []string{contextEndpoint, fmt.Sprintf("%f", elapsedTime)}
+	
+	if err := csvwriter.Write(toWrite); err != nil {
+		log.Fatalln("error writing record to file", err)
+	}
+	
+	csvwriter.Flush()
+	csvFile.Close()
 }

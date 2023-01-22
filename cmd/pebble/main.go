@@ -93,11 +93,14 @@ func main() {
 		"",
 		"Set the Issuer CA signature scheme. Possible values: ECDSA-P256, ECDSA-P384, ECDSA-P521, Dilithium2, Dilihthium3, Dilithium5, Falcon512, Falcon1024, sphincsshake128ssimple, sphincsshake256ssimple",
 	)
-	
 	timingsCSVPath := flag.String(
 		"timingcsv",
 		"",
 		"Path to the CSV file where the timing metrics are written to")
+	perMessageTimingCSVPath := flag.String(
+		"perMessageTimingCSVPath",
+		"",
+		"Path to the CSV file where the timing metrics for each message are written to")
 	loadTestFinalize := flag.Bool(
 		"loadtestfinalize",
 		false,
@@ -137,6 +140,7 @@ func main() {
 	ca.TimingCSVPath = *timingsCSVPath
 	ca.OCSPResponseFilePath = *ocspResponseFilePath
 	wfe.LoadTestFinalize = *loadTestFinalize
+	wfe.PerMessageTimingCSVPath = *perMessageTimingCSVPath
 
 	// Log to stdout
 	logger := log.New(os.Stdout, "Pebble ", log.LstdFlags)
