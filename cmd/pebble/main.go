@@ -101,6 +101,10 @@ func main() {
 		"perMessageTimingCSVPath",
 		"",
 		"Path to the CSV file where the timing metrics for each message are written to")
+	memoryCSVPath := flag.String(
+		"memoryCSVPath",
+		"",
+		"Path to the CSV file where the memory measurements are written to")
 	loadTestFinalize := flag.Bool(
 		"loadtestfinalize",
 		false,
@@ -141,6 +145,11 @@ func main() {
 	ca.OCSPResponseFilePath = *ocspResponseFilePath
 	wfe.LoadTestFinalize = *loadTestFinalize
 	wfe.PerMessageTimingCSVPath = *perMessageTimingCSVPath
+	wfe.MemoryCSVPath = *memoryCSVPath
+
+	if *memoryCSVPath != "" {
+		wfe.PrintMemUsage("start")
+	}
 
 	// Log to stdout
 	logger := log.New(os.Stdout, "Pebble ", log.LstdFlags)
