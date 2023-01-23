@@ -2960,7 +2960,7 @@ func (wfe *WebFrontEndImpl) verifyEABMatchesKey(payload []byte, jwk *jose.JSONWe
 }
 
 
-//store measured time function
+//writeElapsedTime stores measured time function
 func writeElapsedTime(elapsedTime float64, contextEndpoint string) {
 	var toWrite []string
 
@@ -2990,18 +2990,14 @@ func writeElapsedTime(elapsedTime float64, contextEndpoint string) {
 }
 
 
-//additional metric, from here https://gist.github.com/j33ty/79e8b736141be19687f565ea4c6f4226
+// PrintMemUsage metrics, from here https://gist.github.com/j33ty/79e8b736141be19687f565ea4c6f4226
 // PrintMemUsage outputs the current, total and OS memory being used. As well as the number 
 // of garage collection cycles completed.
 func PrintMemUsage(ctx string) {
     var m runtime.MemStats
     runtime.ReadMemStats(&m)
     // For info on each, see: https://golang.org/pkg/runtime/#MemStats
-    //fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc))
-        fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
-        fmt.Printf("\tSys = %v MiB", bToMb(m.Sys))
-        fmt.Printf("\tNumGC = %v\n", m.NumGC)
-	var toWrite []string
+ 	var toWrite []string
 
 	csvFile, err := os.OpenFile(MemoryCSVPath, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
@@ -3012,13 +3008,13 @@ func PrintMemUsage(ctx string) {
 	csvReader := csv.NewReader(csvFile)
 	_, err = csvReader.Read()
 	if err == io.EOF {	///getDir", "/newNonce", "/newAccount", "/newOrder", "/authZ", "/chalZ", "/authZ",
-		toWrite = []string{"ContextEndpoint", "Alloc (MiB)", "TotalAlloc (MiB)", "Sys (MiB)", "NumGC"}
+		toWrite = []string{"ContextEndpoint", "Alloc (MiB)", "TotalAlloc (MiB)", "Sys (MiB)"}
 		if err := csvwriter.Write(toWrite); err != nil {
 			log.Fatalf("error writing record to file. err: %s", err)
 		}
 	}
-
-	toWrite = []string{ctx, fmt.Sprintf("%d", bToMb(m.Alloc), bToMb(m.TotalAlloc), bToMb(m.Sys), m.NumGC)}
+	
+	toWrite = []string{ctx, strconv.FormatUint( bToMb(m.Alloc),10), strconv.FormatUint(bToMb(m.TotalAlloc),10), strconv.FormatUint(bToMb(m.Sys),10)}
 	
 	if err := csvwriter.Write(toWrite); err != nil {
 		log.Fatalln("error writing record to file", err)
