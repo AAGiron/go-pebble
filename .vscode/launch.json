@@ -10,8 +10,19 @@
             "request": "launch",
             "mode": "debug",
             "cwd": "${workspaceRoot}",
-            "program": "${workspaceRoot}/cmd/pebble/main.go",
-            "args": ["-pqtls", "-rootSig","sphincsshake128ssimple", "-interSig", "dilithium2", "-issuerSig", "dilithium2","-kex", "Kyber512", "-rootdir", "/home/vvc/Desktop/LabSec/codes/wrapped_certificates/tests/root_ca"]
+            // Set main package directory to run more than file
+            "program": "${workspaceRoot}/cmd/pebble",
+            "dlvFlags": ["--check-go-version=false"],
+            "args": ["-pqtls", 
+                     "-kex", "Kyber512",
+                     "-newchallenge", 
+                     "-rootSig","ECDSA-P256", 
+                     "-interSig", "ECDSA-P256",
+                     "-issuerSig", "ECDSA-P256",
+                     "--pqorderroot", "Dilithium2",
+                     "-pqorderissuer", "Dilithium2", 
+                     "-rootdir", "/home/vvc/Desktop/LabSec/codes/wrapped_certificates/go-hybrid-tests/root_ca"]
         }
     ]
 }
+

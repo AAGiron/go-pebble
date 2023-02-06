@@ -3,16 +3,17 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"flag"	
+	"encoding/pem"
+	"flag"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"encoding/pem"
 	"regexp"
 	"strconv"
 	"time"
-	"io"
+
 	"github.com/letsencrypt/pebble/v2/ca"
 	"github.com/letsencrypt/pebble/v2/cmd"
 	"github.com/letsencrypt/pebble/v2/db"
@@ -317,7 +318,6 @@ func main() {
 	if *pqtls {
 		tlsCfg := &tls.Config {
 			PQTLSEnabled: true,			
-			IgnoreSigAlg: true,
 		}
 		curveID := tls.StringToCurveIDMap[*kex]
 		if curveID != tls.CurveID(0) {

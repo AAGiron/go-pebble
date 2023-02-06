@@ -8,14 +8,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
-	"crypto/wrap"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -36,7 +34,6 @@ import (
 const (
 	rootCAPrefix            = "Pebble Root CA "
 	intermediateCAPrefix    = "Pebble Intermediate CA "
-	interWrappedCAPrefix    = "Pebble Wrapped CA "
 	pqRootCAPrefix          = "Pebble Post-quantum Root CA "
 	pqIntermediateCAPrefix  = "Pebble Post-quantum Intermediate CA "
 	hybridRootCAPrefix          = "Pebble Hybrid Root CA "
@@ -95,7 +92,6 @@ type CAImpl struct {
 type chain struct {
 	Root          *issuer
 	Intermediates []*issuer
-	wrapped       []*issuer
 }
 
 func (c *chain) String() string {
@@ -260,81 +256,6 @@ func (ca *CAImpl) makeRootCert(
 	}
 	return newCert, nil
 }
-func (ca *CAImpl) makeWrappedCert(
-	subjectKey crypto.Signer,
-	subject pkix.Name,
-	subjectKeyID []byte,
-	signer *issuer,
-	certPSK []byte,
-	wrapAlgorithm string) (*core.Certificate, error) {
-
-	serial := makeSerial()
-	template := &x509.Certificate{
-		Subject:      subject,
-		SerialNumber: serial,
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().AddDate(30, 0, 0),
-
-		KeyUsage:              x509.KeyUsageCertSign,
-		SubjectKeyId:          subjectKeyID,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-	}	
-	
-	signerKey := signer.key
-	parent := signer.Cert.Cert
-
-	subjectPk := subjectKey.Public()	
-	
-	subjectECDSAPk, ok := subjectPk.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, errors.New("wrapped issuer key must be an ECDSA key")
-	}
-
-	pk := elliptic.Marshal(subjectECDSAPk.Curve, subjectECDSAPk.X, subjectECDSAPk.Y)
-	
-	// pk, err := x509.MarshalPKIXPublicKey(subjectKey.Public())
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	wrapped, err := wrap.WrapPublicKey(pk, certPSK, wrapAlgorithm)
-	if err != nil {
-		return nil, err
-	}
-
-	wrapPub := new(wrap.PublicKey)
-	wrapPub.WrappedPk = wrapped
-	wrapPub.ClassicAlgorithm = subjectECDSAPk.Curve
-	wrapPub.WrapAlgorithm = wrapAlgorithm
-
-	der, err := x509.CreateCertificate(rand.Reader, template, parent, wrapPub, signerKey)
-	if err != nil {
-		return nil, err
-	}
-
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return nil, err
-	}
-
-	hexSerial := hex.EncodeToString(cert.SerialNumber.Bytes())
-	newCert := &core.Certificate{
-		ID:   hexSerial,
-		Cert: cert,
-		DER:  der,
-	}
-	
-	newCert.IssuerChains = make([][]*core.Certificate, 1)
-	newCert.IssuerChains[0] = []*core.Certificate{signer.Cert}
-	
-	_, err = ca.db.AddCertificate(newCert)
-	if err != nil {
-		return nil, err
-	}
-	return newCert, nil
-}
-
 
 func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	// Make a root private key
@@ -400,21 +321,6 @@ func (ca *CAImpl) newIntermediateIssuer(root *issuer, intermediateKey crypto.Sig
 	}
 	// Make an intermediate certificate with the root issuer
 	ic, err := ca.makeRootCert(intermediateKey, subject, subjectKeyID, root)
-	if err != nil {
-		return nil, err
-	}
-	ca.log.Printf("Generated new intermediate issuer %s with serial %s and SKI %x\n", ic.Cert.Subject, ic.ID, subjectKeyID)
-	return &issuer{
-		key:  intermediateKey,
-		Cert: ic,
-	}, nil
-}
-func (ca *CAImpl) newWrappedIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte, psk []byte, wrapAlgorithm string) (*issuer, error) {
-	if root == nil {
-		return nil, fmt.Errorf("Internal error: root must not be nil")
-	}
-	// Make an intermediate certificate with the root issuer
-	ic, err := ca.makeWrappedCert(intermediateKey, subject, subjectKeyID, root, psk, wrapAlgorithm)
 	if err != nil {
 		return nil, err
 	}
@@ -495,19 +401,16 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 	}
 	intermediates[0] = intermediate
 
-	wrappeds := make([]*issuer, 0)
-
 	c := &chain{
 		Root:          root,
 		Intermediates: intermediates,
-		wrapped:       wrappeds,
 	}
 	ca.log.Printf("Generated issuance chain: %s", c)
 
 	return c
 }
 
-func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.PublicKey, accountID, notBefore, notAfter string, wrappedIssuer *issuer) (*core.Certificate, error) {
+func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.PublicKey, accountID, notBefore, notAfter string) (*core.Certificate, error) {
 // newChain generates a new issuance chain, including a root certificate and numIntermediates intermediates (at least 1).
 // The first intermediate will use intermediateKey, intermediateSubject and subjectKeyId.
 // Any intermediates between the first intermediate and the root will have their keys and subjects generated automatically.
@@ -521,12 +424,7 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 		return nil, fmt.Errorf("must specify at least one domain name or IP address")
 	}
 
-	var defaultChain []*issuer
-	if wrappedIssuer != nil {
-		defaultChain = []*issuer{wrappedIssuer}
-	} else {
-		defaultChain = ca.Chains[0].Intermediates
-	}
+	defaultChain := ca.Chains[0].Intermediates
 
 	if len(defaultChain) == 0 || defaultChain[0].Cert == nil {
 		return nil, fmt.Errorf("cannot sign certificate - nil issuer")
@@ -601,29 +499,15 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 	}
 
 	issuers := make([][]*core.Certificate, len(ca.Chains))
-
-	if wrappedIssuer == nil {
-		for i := 0; i < len(ca.Chains); i++ {			
-			issuerChain := make([]*core.Certificate, len(ca.Chains[i].Intermediates))
-			for j, cert := range ca.Chains[i].Intermediates {
-				issuerChain[j] = cert.Cert
-			}
-					
-			issuers[i] = issuerChain
+	for i := 0; i < len(ca.Chains); i++ {			
+		issuerChain := make([]*core.Certificate, len(ca.Chains[i].Intermediates))
+		for j, cert := range ca.Chains[i].Intermediates {
+			issuerChain[j] = cert.Cert
 		}
-	} else {
-		for i := 0; i < len(ca.Chains); i++ {			
-			issuerChain := make([]*core.Certificate, len(ca.Chains[i].Intermediates) + 1)
-			
-			issuerChain[0] = wrappedIssuer.Cert
-			
-			for j, cert := range ca.Chains[i].Intermediates {
-				issuerChain[j+1] = cert.Cert
-			}			
-					
-			issuers[i] = issuerChain
-		}				
+				
+		issuers[i] = issuerChain
 	}
+
 
 	hexSerial := hex.EncodeToString(cert.SerialNumber.Bytes())
 	newCert := &core.Certificate{
@@ -707,12 +591,10 @@ func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject 
 		panic(fmt.Sprintf("Error creating new intermediate issuer: %s", err.Error()))
 	}
 	intermediates[0] = intermediate
-	wrappeds := make([]*issuer, 0)
 
 	c := &chain{
 		Root:          root,
 		Intermediates: intermediates,
-		wrapped:       wrappeds,
 	}
 	ca.log.Printf("Generated issuance chain: %s", c)
 
@@ -806,48 +688,15 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 	// issue a certificate for the csr
 	csr := order.ParsedCSR
 	
-	var wrappedIssuer *issuer
-
 	timer := time.Now
-	start := timer()	
+	start := timer()		
 
-	if csr.PublicKeyAlgorithm == x509.WrappedECDSA {
-
-		wrappedCSRPub, ok := csr.PublicKey.(*wrap.PublicKey)
-		if !ok {
-			panic("CSR's PublicKeyAlgorithm is WrappedECDSA but PublicKey is not *wrap.PublicKey")
-		}
-
-		fmt.Printf("\nPebble: Received a CSR with a wrapped public key. Unwrapping the public key and verifying the CSR signature\n\n")
-
-		ok, err := x509.VerifyWrappedCSRSignature(csr)
-		if err != nil {
-			panic(err)
-		}
-
-		if !ok {
-			panic("Wrapped CSR signature is not valid")
-		}
-
-		fmt.Printf("Pebble: Wrapped CSR signature is valid.\n\nGenerating a new Issuer CA with a wrapped certificate\n\n")
-
-		// Get cert psk 
-		certPSK := x509.GetCertPSK(csr)
-
-		// Generate a new wrapped Issuer
-		chain := ca.getChain(0)
-		wrappedIssuer = ca.GenWrappedIssuer(chain, certPSK, wrappedCSRPub.WrapAlgorithm)
-	} else {
-		wrappedIssuer = nil
-		//Verify CSR 
-		if err := csr.CheckSignature(); err != nil {
-			ca.log.Printf("Error: unable to verify regular (non-wrapped) CSR : %s", err.Error())
-			return 
-		}
+	if err := csr.CheckSignature(); err != nil {
+		ca.log.Printf("Error: unable to verify regular CSR : %s", err.Error())
+		return 
 	}
-	
 
-	cert, err := ca.newCertificate(csr.DNSNames, csr.IPAddresses, csr.PublicKey, order.AccountID, order.NotBefore, order.NotAfter, wrappedIssuer)
+	cert, err := ca.newCertificate(csr.DNSNames, csr.IPAddresses, csr.PublicKey, order.AccountID, order.NotBefore, order.NotAfter)
 	if err != nil {
 		ca.log.Printf("Error: unable to issue order: %s", err.Error())
 		return
@@ -935,43 +784,6 @@ func (ca *CAImpl) GetIntermediateKey(no int) interface{} {
 	return nil
 }
 
-// Adds new wrapped issuer in the chain identified by `c`.
-func (ca *CAImpl) GenWrappedIssuer(c *chain, psk []byte, wrapAlgorithm string) *issuer {
-
-	chainID := hex.EncodeToString(makeSerial().Bytes()[:3])
-	parent := c.Intermediates[0]
-	// sigScheme := c.sigSchemeWrap
-
-	// k, ski, err := makeKey()
-	k, ski, err := makeECDSAKey(IssuerSig)
-
-	if err != nil {
-		panic(fmt.Sprintf("Error creating new wrapped issuer: %v", err))
-	}
-
-	wrapped, err := ca.newWrappedIssuer(parent, k, pkix.Name{
-		CommonName: fmt.Sprintf("%s%v", interWrappedCAPrefix, chainID),
-	}, ski, psk, wrapAlgorithm)
-	if err != nil {
-		panic(fmt.Sprintf("Error creating new intermediate issuer: %s", err.Error()))
-	}
-
-	c.wrapped = append(c.wrapped, wrapped)
-
-	n := len(c.wrapped)
-	names := make([]string, n)
-	for i := range c.wrapped {
-		names[n-i-1] = c.wrapped[i].Cert.Cert.Subject.CommonName
-	}
-	// w := strings.Join(names, ", ")
-
-	// ca.log.Printf("Generated issuance chain: %s", c)
-
-	fmt.Printf("\nPebble: Generated issuance chain: %s -> %s -> %s\n\n", c.Root.Cert.Cert.Subject.CommonName, c.Intermediates[0].Cert.Cert.Subject.CommonName, c.wrapped[0].Cert.Cert.Subject.CommonName)
-
-	return wrapped
-}
-
 func writeElapsedTime(elapsedTime float64, certificatePublicKey interface{}, signatureAlgorithm string) {
 	var toWrite []string
 	certAlgorithm := getPublicKeyAlgorithmName(certificatePublicKey)	
@@ -1002,10 +814,6 @@ func writeElapsedTime(elapsedTime float64, certificatePublicKey interface{}, sig
 }
 
 func getPublicKeyAlgorithmName(publicKey interface{}) string {	
-	wrappedPub, ok := publicKey.(*wrap.PublicKey)
-	if ok {
-		return wrappedPub.GetNameString()
-	}
 	pqcPub, ok := publicKey.(*liboqs_sig.PublicKey)
 	if ok {
 		return liboqs_sig.SigIdtoName[pqcPub.SigId]
