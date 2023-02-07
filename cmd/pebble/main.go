@@ -198,7 +198,7 @@ func main() {
 		cmd.FailOnError(err, "Failed to add domain to block list")
 	}
 
-	//for the new challenge, backup the classical CA
+	//PQCACME Modification: backup the classical CA for the new challenge
 	wfe.ClassicalCA = caImpl
 
 	wfeImpl := wfe.New(logger, db, va, caImpl, *strictMode, c.Pebble.ExternalAccountBindingRequired)

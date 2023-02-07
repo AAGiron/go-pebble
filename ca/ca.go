@@ -34,48 +34,21 @@ import (
 const (
 	rootCAPrefix            = "Pebble Root CA "
 	intermediateCAPrefix    = "Pebble Intermediate CA "
-	pqRootCAPrefix          = "Pebble Post-quantum Root CA "
-	pqIntermediateCAPrefix  = "Pebble Post-quantum Intermediate CA "
-	hybridRootCAPrefix          = "Pebble Hybrid Root CA "
-	hybridIntermediateCAPrefix  = "Pebble Hybrid Intermediate CA "
 	defaultValidityPeriod = 157766400
-)
-// Signatures schemes for local use
-type pqcSignature int
-
-const (
-
-	unknownPQCsignature pqcSignature = iota
-	
-	Dilithium2 
-	Falcon512  
-	
-	Dilithium3 	
-	
-	Dilithium5
-	Falcon1024 
-
-	SphincsShake128sSimple 
-	SphincsShake256sSimple 
-
-	P256_Dilithium2
-	P256_Falcon512
-	P256_SphincsShake128sSimple
-
-
-	P384_Dilithium3
-
-	P521_Dilithium5
-	P521_Falcon1024
-	P521_SphincsShake256sSimple
 )
 
 var (
+	// RootSig is the name of the signature algorithm used by the Root CA
 	RootSig string
+	// InterSig is the name of the signature algorithm used by the Intermediate CAs
 	InterSig string
+	// IssuerSig is the name of the signature algorithm used by the Issuer CA
 	IssuerSig string
+	// TimingCSVPath is the path to the file where timing measurements are written to.
 	TimingCSVPath string
+	// OCSPResponseFilePath is the path to the file where the dummy OCSP response that is created is going to be written to.
 	OCSPResponseFilePath string
+	// ocspResponse is the dummy OCSP response that is created.
 	ocspResponse []byte
 )
 
@@ -157,6 +130,7 @@ func makeKey() (*rsa.PrivateKey, []byte, error) {
 	return key, ski, nil
 }
 
+// makeECDSAKey generates an ECDSA private key for the algorithm with name `classicAlgorithm
 func makeECDSAKey(classicAlgorithm string) (*ecdsa.PrivateKey, []byte, error) {
 	var curve elliptic.Curve
 	switch classicAlgorithm {
@@ -181,24 +155,6 @@ func makeECDSAKey(classicAlgorithm string) (*ecdsa.PrivateKey, []byte, error) {
 	}
 	return key, ski, nil
 }
-
-func makePQCKey(signatureScheme string) (*liboqs_sig.PrivateKey, []byte, error) {
-	var ID liboqs_sig.ID
-
-	ID = liboqs_sig.NameToSigID(signatureScheme)
-	
-	pub, priv, err := liboqs_sig.GenerateKey(ID)
-	if err != nil {
-		log.Fatalf("Failed to generate private key: %v", err)
-	}
-
-	ski, err := makeSubjectKeyID(pub)
-	if err != nil {
-		return nil, nil, err
-	}
-	return priv, ski, nil
-}
-
 
 func (ca *CAImpl) makeRootCert(
 	subjectKey crypto.Signer,
@@ -282,39 +238,6 @@ func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	}, nil
 }
 
-
-func (ca *CAImpl) newPqRootIssuer(name, rootSig string, hybrid bool) (*issuer, error) {
-	
-	// Make a root private key
-	rk, subjectKeyID, err := makePQCKey(rootSig)
-	if err != nil {
-		return nil, err
-	}
-
-	// Make a self-signed root certificate
-	var subject pkix.Name
-	
-	if !hybrid {
-		subject = pkix.Name{
-			CommonName: pqRootCAPrefix + name,
-		}
-	} else {
-		subject = pkix.Name{
-			CommonName: hybridRootCAPrefix + name,
-		}
-	}
-	rc, err := ca.makeRootCert(rk, subject, subjectKeyID, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	ca.log.Printf("Generated new root issuer %s with serial %s and SKI %x\n", rc.Cert.Subject, rc.ID, subjectKeyID)
-	return &issuer{
-		key:  rk,
-		Cert: rc,
-	}, nil
-}
-
 func (ca *CAImpl) newIntermediateIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte) (*issuer, error) {
 	if root == nil {
 		return nil, fmt.Errorf("Internal error: root must not be nil")
@@ -331,25 +254,12 @@ func (ca *CAImpl) newIntermediateIssuer(root *issuer, intermediateKey crypto.Sig
 	}, nil
 }
 
-func (ca *CAImpl) newPqIntermediateIssuer(root *issuer, intermediateKey crypto.Signer, subject pkix.Name, subjectKeyID []byte, hybrid bool) (*issuer, error) {
-	if root == nil {
-		return nil, fmt.Errorf("Internal error: root must not be nil")
-	}
-
-	// Make an intermediate certificate with root signature
-	ic, err := ca.makeRootCert(intermediateKey, subject, subjectKeyID, root)
-	if err != nil {
-		return nil, err
-	}
-	ca.log.Printf("Generated new intermediate issuer %s with serial %s and SKI %x\n", ic.Cert.Subject, ic.ID, subjectKeyID)
-	return &issuer{
-		key:  intermediateKey,
-		Cert: ic,
-	}, nil
-}
 // newChain generates a new issuance chain, including a root certificate and numIntermediates intermediates (at least 1).
 // The first intermediate will use intermediateKey, intermediateSubject and subjectKeyId.
 // Any intermediates between the first intermediate and the root will have their keys and subjects generated automatically.
+
+// PQCACME Modification: after the root CA is generated, we write it's certificate to `dirToSaveRoot`. Without this modification,
+// the root CA would not be persisted and the TLS client of our tests would not be able to trust in it.
 func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pkix.Name, subjectKeyID []byte, numIntermediates int, dirToSaveRoot string) *chain {
 	if numIntermediates <= 0 {
 		panic("At least one intermediate must be present in the certificate chain")
@@ -410,6 +320,9 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 	return c
 }
 
+// newCertificate
+// PQCACME Modification: Dummy Signed Certificate Timestamps are now attached to the certificate generated and 
+// a dummy OCSP Response is created. Both the SCT and OCSP Response are signed by `issuer`.
 func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.PublicKey, accountID, notBefore, notAfter string) (*core.Certificate, error) {
 // newChain generates a new issuance chain, including a root certificate and numIntermediates intermediates (at least 1).
 // The first intermediate will use intermediateKey, intermediateSubject and subjectKeyId.
@@ -523,83 +436,6 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 	}
 	return newCert, nil
 }
-func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject pkix.Name, subjectKeyID []byte, numIntermediates int, dirToSaveRoot string, pqChain []string, hybrid bool) *chain {
-	if numIntermediates <= 0 {
-		panic("At least one intermediate must be present in the certificate chain")
-	}
-
-	chainID := hex.EncodeToString(makeSerial().Bytes()[:3])
-
-	root, err := ca.newPqRootIssuer(chainID, pqChain[0], hybrid)
-	if err != nil {
-		panic(fmt.Sprintf("Error creating new root issuer: %s", err.Error()))
-	}
-
-	if dirToSaveRoot != "" {
-		var certOut *os.File
-
-		if !hybrid {
-			certOut, err = os.Create(dirToSaveRoot + "/pq_root_ca_pebble.pem")
-		} else {
-			certOut, err = os.Create(dirToSaveRoot + "/hybrid_root_ca_pebble.pem")
-		}
-
-		if err != nil {
-			log.Fatalf("Failed to open cert.pem for writing: %v", err)
-		}
-		if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: root.Cert.DER}); err != nil {
-			log.Fatalf("Failed to write data to cert.pem: %v", err)
-		}
-		if err := certOut.Close(); err != nil {
-			log.Fatalf("Error closing cert.pem: %v", err)
-		}	
-	}	
-
-	// The last N-1 intermediates build a path from the root to the leaf signing certificate.
-	// If numIntermediates is only 1, then no intermediates will be generated here.
-	prev := root
-	intermediates := make([]*issuer, numIntermediates)
-	for i := numIntermediates - 1; i > 0; i-- {
-		
-		k, ski, err := makePQCKey(pqChain[1])
-
-		if err != nil {
-			panic(fmt.Sprintf("Error creating new intermediate issuer: %v", err))
-		}
-
-		var intermediate *issuer
-		if hybrid {
-			intermediate, err = ca.newPqIntermediateIssuer(prev, k, pkix.Name{
-				CommonName: fmt.Sprintf("%s%s #%d", hybridIntermediateCAPrefix, chainID, i),
-			}, ski, hybrid)
-		} else {
-			intermediate, err = ca.newPqIntermediateIssuer(prev, k, pkix.Name{
-				CommonName: fmt.Sprintf("%s%s #%d", pqIntermediateCAPrefix, chainID, i),
-			}, ski, hybrid)
-		}
-	
-		if err != nil {
-			panic(fmt.Sprintf("Error creating new intermediate issuer: %s", err.Error()))
-		}
-		intermediates[i] = intermediate
-		prev = intermediate
-	}
-
-	// The first issuer is the one which signs the leaf certificates
-	intermediate, err := ca.newPqIntermediateIssuer(prev, intermediateKey, intermediateSubject, subjectKeyID, hybrid)
-	if err != nil {
-		panic(fmt.Sprintf("Error creating new intermediate issuer: %s", err.Error()))
-	}
-	intermediates[0] = intermediate
-
-	c := &chain{
-		Root:          root,
-		Intermediates: intermediates,
-	}
-	ca.log.Printf("Generated issuance chain: %s", c)
-
-	return c
-}
 
 func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternateRoots int, chainLength int, certificateValidityPeriod uint, dirToSaveRoot string, pqChain []string, hybrid bool) *CAImpl {
 	ca := &CAImpl{
@@ -613,6 +449,11 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 		ca.log.Printf("Setting OCSP responder URL for issued certificates to %q", ca.ocspResponderURL)
 	}
 
+	// Now is possible to generate two types of chain
+	// A) classical chain (using ECDSA) 
+	// B) pqc-onhly and hybrid chain
+
+	// case A)
 	if pqChain[0] == "" {
 		intermediateSubject := pkix.Name{
 			CommonName: intermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
@@ -627,7 +468,8 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 		for i := 0; i < len(ca.Chains); i++ {
 			ca.Chains[i] = ca.newChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot)
 		}
-
+	
+	// Case B)
 	} else {
 		var intermediateSubject pkix.Name
 		
@@ -661,6 +503,7 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 	return ca
 }
 
+// It was added code to measure the time elapsed to process the CSR and issue a certificate for it.
 func (ca *CAImpl) CompleteOrder(order *core.Order) {
 	// Lock the order for reading
 	order.RLock()
@@ -766,13 +609,13 @@ func (ca *CAImpl) GetIntermediateCert(no int) *core.Certificate {
 	}
 	return chain.Intermediates[0].Cert
 }
-
+// GetIntermediateKey returns the private key of the first (closest to the leaf) issuer CA
+// in the chain identified by `no`.
 func (ca *CAImpl) GetIntermediateKey(no int) interface{} {
 	chain := ca.getChain(no)
 	if chain == nil {
 		return nil
 	}
-
 	switch key := chain.Intermediates[0].key.(type) {
 	case *rsa.PrivateKey:
 		return key
@@ -784,6 +627,7 @@ func (ca *CAImpl) GetIntermediateKey(no int) interface{} {
 	return nil
 }
 
+// writeElapsedTime writes the elapsed time to Pebble process a CSR and issue a certificate for it in the file pointed by `TimingCSVPath`.
 func writeElapsedTime(elapsedTime float64, certificatePublicKey interface{}, signatureAlgorithm string) {
 	var toWrite []string
 	certAlgorithm := getPublicKeyAlgorithmName(certificatePublicKey)	

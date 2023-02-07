@@ -125,6 +125,7 @@ const (
 	defaultOrdersPerPage = 3
 )
 
+// LoadTestFinalize is set to true when Pebble allows the ACME Client to perform a load test in the /finalize-order/ endpoint.
 var LoadTestFinalize bool
 var PerMessageTimingCSVPath string
 var MemoryCSVPath string

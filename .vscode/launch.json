@@ -15,7 +15,7 @@
             "dlvFlags": ["--check-go-version=false"],
             "args": ["-pqtls", 
                      "-kex", "Kyber512",
-                     "-newchallenge", 
+                     //"-newchallenge", 
                      "-rootSig","ECDSA-P256", 
                      "-interSig", "ECDSA-P256",
                      "-issuerSig", "ECDSA-P256",

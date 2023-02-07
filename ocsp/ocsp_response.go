@@ -16,17 +16,18 @@ const (
 	byName          string = "OCSP Responder"
 )
 
-// RFC 6960
+// ocspResponse represents an OCSP response as defined in RFC6960 4.2.1
 type ocspResponse struct {
 	ResponseStatus int
 	ResponseBytes  responseBytes
 }
-
+// responseBytes represents a ResponseBytes as defined in RFC6960 4.2.1
 type responseBytes struct {
 	ResponseType asn1.ObjectIdentifier
 	Response     []byte
 }
 
+//basicOCSPResponse represents a BasicOCSPResponse as defined in RFC6960 4.2.1.
 type basicOCSPResponse struct {
 	ResponseData  responseData
 	SignatureAlgo pkix.AlgorithmIdentifier
@@ -38,15 +39,16 @@ type extension struct {
 	ExtensionType int
 	ExtensionData []byte
 }
-
+// responseData represents a ResponseData as defined in RFC6960 4.2.1.
 type responseData struct {
 	Version            int
 	ResponderID        responderID
 	ProducedAt         time.Time
 	Responses          []singleResponse
-	ResponseExtensions []extension 				// Optional
+	ResponseExtensions []extension
 }
 
+// responderID represents a ResponderID as defined in RFC6960 4.2.1.
 type responderID struct {
 	ByName pkix.Name
 }
@@ -58,13 +60,12 @@ type singleResponse struct {
 	NextUpdate time.Time
 }
 
-// Creates a new OCSP response as it is defined in RFC 6960 
-//
-// The OCSP response is signed by priv which should be the private key from Server Responder. In 
-// this case, the server responder will be the intermediate CA
-//
-// The hash and signature algorithm are the same from Certificate
+// CreateOCSPResponse creates a new OCSP response as it is defined in RFC 6960.
 
+// The OCSP response is signed by priv which should be the private key from server responder. In 
+// this case, the server responder will be the intermediate CA.
+
+// The hash and signature algorithm are the same from Certificate
 func CreateOCSPResponse(rand io.Reader, template *x509.Certificate, priv interface{}) ([]byte, error) {
 
 	s := singleResponse{
