@@ -1923,9 +1923,9 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 			return
 		}
 	}
-
-	//if the new challenge was executed, this reverts the CA back to the original one
-	wfe.Ca = ClassicalCA
+	
+	// Reverts the CA back to the original one after new challenge was executed
+	wfe.Ca.PQCACME = false
 
 	// Find the account corresponding to the key that authenticated the POST request
 	existingAcct, prob := wfe.GetAcctByKey(postData.Jwk)

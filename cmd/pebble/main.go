@@ -3,9 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/pem"
 	"flag"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -17,6 +15,7 @@ import (
 	"github.com/letsencrypt/pebble/v2/ca"
 	"github.com/letsencrypt/pebble/v2/cmd"
 	"github.com/letsencrypt/pebble/v2/db"
+	nc "github.com/letsencrypt/pebble/v2/newchallenge"
 	"github.com/letsencrypt/pebble/v2/va"
 	"github.com/letsencrypt/pebble/v2/wfe"
 )
@@ -42,12 +41,6 @@ type config struct {
 		PQOrderTLSPortAddress	int
 	}
 }
-
-//AAG: using this global variable to integrate wfe instance (from here) with newchallenge.go
-//when creating a new package for the newchallenge, it will become inacessible
-var GlobalWebFrontEnd *wfe.WebFrontEndImpl
-//now creating a global access to create PQOrderCA
-var PQOrderCA *ca.CAImpl
 
 func main() {
 	configFile := flag.String(
@@ -198,9 +191,6 @@ func main() {
 		cmd.FailOnError(err, "Failed to add domain to block list")
 	}
 
-	//PQCACME Modification: backup the classical CA for the new challenge
-	wfe.ClassicalCA = caImpl
-
 	wfeImpl := wfe.New(logger, db, va, caImpl, *strictMode, c.Pebble.ExternalAccountBindingRequired)
 	muxHandler := wfeImpl.Handler()
 
@@ -263,46 +253,41 @@ func main() {
 									strconv.Itoa(c.Pebble.PQOrderTLSPortAddress)//+string(wfe.NewChallengePath)
 		}
 
-		//we need the Root CA here also. TODO: could read from wfe.RootCertPath and remove getPebbleRootCA()
 		caCertPool := x509.NewCertPool()
-		pebbleRootCA, pebbleerr := getPebbleRootCA()
-		if pebbleerr != nil {
-			log.Fatalf("Could not complete Pebble's new Root CA download:\n\t%v", pebbleerr)
+		if alternateRoots != 0 {
+			panic("alternateRoot are not supported in PQCACME")
 		}
-		pemRoot, _ := pem.Decode(pebbleRootCA)
-		rootCertX509, pebbleerr := x509.ParseCertificate(pemRoot.Bytes)
-		if err != nil {
-			panic(err)
-		}
+		// In our tests we always suppose that it will have at most two chains: one classical and one post-quantum.
+		// So if it is needed one of them, so they should be the first one in their respective field (classicChains and PQChains)
+		rootCertX509 := caImpl.GetRootCert(0).Cert
 		caCertPool.AddCert(rootCertX509)
 
 		tlsCfg := &tls.Config {
 			PQTLSEnabled: true,			
 			InsecureSkipVerify: false,
-			ClientAuth: tls.RequireAndVerifyClientCert, //mandatory Client Auth
-			//ClientAuth: tls.VerifyClientCertIfGiven, //optional Client Auth		
+			ClientAuth: tls.RequireAndVerifyClientCert, //mandatory Client Auth		
 			ClientCAs:	caCertPool,
 		}
 		
-		//grabs WFE instance
-		GlobalWebFrontEnd = &wfeImpl
-
-		//creates a second CA chain (PQC one for the new challenge)
+		
 		if *pqOrderRoot == "" || *pqOrderIssuer == ""{
 			panic("If new challenge you must provide --pqOrderRoot and --pqOrderIssuer algorithms")
 		}
 		pqOrderChain := []string{*pqOrderRoot, *pqOrderIssuer, *pqOrderIssuer}
-		//sets a new CA (Root and Interm. certs from pqOrderChain) but keeps DB and other data
-		PQOrderCA = ca.New(logger, db, c.Pebble.OCSPResponderURL, alternateRoots, chainLength, c.Pebble.CertificateValidityPeriod, *dirToSaveRoot, pqOrderChain, *hybrid)	
 
-		//starts pq-order endpoint in a different TLS config (requires client auth).
+		// PQCACME Modification: Creates a second CA chain (PQC one for the new challenge)
+		caImpl.AddPQChain(chainLength, *dirToSaveRoot, pqOrderChain, *hybrid)
+
+		// Grabs WFE instance
+		grabbedWFE := &nc.NewChallengeWFE{WebFrontEndImpl: wfeImpl}
+	
+		// Starts pq-order endpoint in a different TLS config (requires client auth).
 		go func() {
-			http.HandleFunc(string(wfe.NewChallengePath), HandlePQOrder)
+			http.HandleFunc(string(wfe.NewChallengePath), grabbedWFE.HandlePQOrder)
 			err := http.ListenAndServeTLSWithConfig(
 				c.Pebble.PQOrderListenAddress,				
 				c.Pebble.Certificate,
 				c.Pebble.PrivateKey,
-				//newChallengeHandler,
 				nil, //default handler
 				tlsCfg,
 			)
@@ -311,9 +296,6 @@ func main() {
 		logger.Printf("ACME %s%s endpoint is activated",c.Pebble.PQOrderListenAddress,string(wfe.NewChallengePath))
 		
 	}
-	
-	
-
 	
 	if *pqtls {
 		tlsCfg := &tls.Config {
@@ -341,20 +323,4 @@ func main() {
 		)
 	}
 	cmd.FailOnError(err, "Calling ListenAndServeTLS()")
-}
-
-
-//could remove this (see TODO above)
-func getPebbleRootCA()([]byte, error){	
-	requestURL := "https://localhost:15000/roots/0"
-	res, err := http.Get(requestURL)
-	if err != nil {
-		return nil, err
-	}
-
-	rootCert, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	return rootCert, nil
 }

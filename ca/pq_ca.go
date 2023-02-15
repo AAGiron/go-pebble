@@ -119,6 +119,32 @@ func (ca *CAImpl) newPqIntermediateIssuer(root *issuer, intermediateKey crypto.S
 	}, nil
 }
 
+// PQCACME Modification: Adds `pqChain` as `ca.PQChains`
+// It also suits for newchallenge when new post-quantum chain is required on the demand
+func (ca *CAImpl) AddPQChain(chainLength int, dirToSaveRoot string, pqChain []string, hybrid bool) {
+	ca.PQCACME = true
+	var intermediateSubject pkix.Name
+	
+	if hybrid {
+		intermediateSubject = pkix.Name{
+			CommonName: hybridIntermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
+		}
+	} else {
+		intermediateSubject = pkix.Name{
+			CommonName: pqIntermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
+		}
+	}
+	intermediateKey, subjectKeyID, err := makePQCKey(pqChain[2])
+	if err != nil {
+		panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
+	}
+
+	ca.PQChains = make([]*chain, 1)
+	for i := 0; i < len(ca.PQChains); i++ {
+		ca.PQChains[i] = ca.newPqChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot, pqChain, hybrid)
+	}
+}
+
 // PQCACME Modification: newPqChain generates a new post-quantum issuance chain, including a root certificate and numIntermediates intermediates (at least 1).
 func (ca *CAImpl) newPqChain(intermediateKey crypto.Signer, intermediateSubject pkix.Name, subjectKeyID []byte, numIntermediates int, dirToSaveRoot string, pqChain []string, hybrid bool) *chain {
 	if numIntermediates <= 0 {

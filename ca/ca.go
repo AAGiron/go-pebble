@@ -57,8 +57,12 @@ type CAImpl struct {
 	db               *db.MemoryStore
 	ocspResponderURL string
 
-	Chains []*chain
-
+	// ClassicChains contains all classical chains. 
+	ClassicChains []*chain
+	// PQCACME is set to true when a post-quantum chain is used
+	PQCACME bool
+	// PQChains contains all post-quantum chains.
+	PQChains []*chain
 	certValidityPeriod uint
 }
 
@@ -215,8 +219,6 @@ func (ca *CAImpl) makeRootCert(
 
 func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	// Make a root private key
-	
-	// rk, subjectKeyID, err := makeKey()
 	rk, subjectKeyID, err := makeECDSAKey(RootSig)
 
 	if err != nil {
@@ -337,7 +339,14 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 		return nil, fmt.Errorf("must specify at least one domain name or IP address")
 	}
 
-	defaultChain := ca.Chains[0].Intermediates
+	
+	var defaultChain []*issuer
+	if !ca.PQCACME {
+		defaultChain = ca.ClassicChains[0].Intermediates
+	} else {
+		defaultChain = ca.PQChains[0].Intermediates
+	}
+	
 
 	if len(defaultChain) == 0 || defaultChain[0].Cert == nil {
 		return nil, fmt.Errorf("cannot sign certificate - nil issuer")
@@ -411,10 +420,16 @@ func (ca *CAImpl) newCertificate(domains []string, ips []net.IP, key crypto.Publ
 		return nil, err
 	}
 
-	issuers := make([][]*core.Certificate, len(ca.Chains))
-	for i := 0; i < len(ca.Chains); i++ {			
-		issuerChain := make([]*core.Certificate, len(ca.Chains[i].Intermediates))
-		for j, cert := range ca.Chains[i].Intermediates {
+	var Chains []*chain
+	if !ca.PQCACME {
+		Chains = ca.ClassicChains
+	} else {
+		Chains = ca.PQChains
+	}
+	issuers := make([][]*core.Certificate, len(Chains))
+	for i := 0; i < len(Chains); i++ {			
+		issuerChain := make([]*core.Certificate, len(Chains[i].Intermediates))
+		for j, cert := range Chains[i].Intermediates {
 			issuerChain[j] = cert.Cert
 		}
 				
@@ -451,10 +466,12 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 
 	// Now is possible to generate two types of chain
 	// A) classical chain (using ECDSA) 
-	// B) pqc-onhly and hybrid chain
+	// B) hybrid and pq-only chain
 
 	// case A)
 	if pqChain[0] == "" {
+		ca.PQCACME = false
+
 		intermediateSubject := pkix.Name{
 			CommonName: intermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
 		}
@@ -464,34 +481,14 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
 		}
-		ca.Chains = make([]*chain, 1+alternateRoots)
-		for i := 0; i < len(ca.Chains); i++ {
-			ca.Chains[i] = ca.newChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot)
+		ca.ClassicChains = make([]*chain, 1+alternateRoots)
+		for i := 0; i < len(ca.ClassicChains); i++ {
+			ca.ClassicChains[i] = ca.newChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot)
 		}
 	
 	// Case B)
 	} else {
-		var intermediateSubject pkix.Name
-		
-		if hybrid {
-			intermediateSubject = pkix.Name{
-				CommonName: hybridIntermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
-			}
-		} else {
-			intermediateSubject = pkix.Name{
-				CommonName: pqIntermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
-			}
-		}
-		intermediateKey, subjectKeyID, err := makePQCKey(pqChain[2])
-		if err != nil {
-			panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))
-		}
-
-		ca.Chains = make([]*chain, 1+alternateRoots)
-		for i := 0; i < len(ca.Chains); i++ {
-			ca.Chains[i] = ca.newPqChain(intermediateKey, intermediateSubject, subjectKeyID, chainLength, dirToSaveRoot, pqChain, hybrid)
-		}
-		
+		ca.AddPQChain(chainLength, dirToSaveRoot, pqChain, hybrid)
 	}
 
 	if certificateValidityPeriod != 0 && certificateValidityPeriod < 9223372038 {
@@ -566,15 +563,16 @@ func (ca *CAImpl) CompleteOrder(order *core.Order) {
 }
 
 func (ca *CAImpl) GetNumberOfRootCerts() int {
-	return len(ca.Chains)
+	return len(ca.ClassicChains)
 }
 
 func (ca *CAImpl) getChain(no int) *chain {
-	if 0 <= no && no < len(ca.Chains) {
-		return ca.Chains[no]
+	if 0 <= no && no < len(ca.ClassicChains) {
+		return ca.ClassicChains[no]
 	}
 	return nil
 }
+
 
 func (ca *CAImpl) GetRootCert(no int) *core.Certificate {
 	chain := ca.getChain(no)

@@ -22,3 +22,7 @@ func randomString(byteLength int) string {
 func newToken() string {
 	return randomString(32)
 }
+
+func RandomString(byteLength int) string {
+	return randomString(byteLength)
+}
