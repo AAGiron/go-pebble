@@ -15,4 +15,4 @@ require (
 
 go 1.16
 
-replace gopkg.in/square/go-jose.v2 => ../go-jose
+replace gopkg.in/square/go-jose.v2 => ./go-jose
