@@ -122,7 +122,6 @@ func (ca *CAImpl) newPqIntermediateIssuer(root *issuer, intermediateKey crypto.S
 // PQCACME Modification: Adds `pqChain` as `ca.PQChains`
 // It also suits for newchallenge when new post-quantum chain is required on the demand
 func (ca *CAImpl) AddPQChain(chainLength int, dirToSaveRoot string, pqChain []string, hybrid bool) {
-	ca.PQCACME = true
 	var intermediateSubject pkix.Name
 	
 	if hybrid {

@@ -84,6 +84,9 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 		return
 	}
 
+	// Set pebble to use post-quantum PKI to issue the certificate
+	w.Ca.PQCACME = true
+
 	//2. There is no order (yet), so go straight parsing and processing CSR 
 	//to issue a PQ certificate
 	var finalizeMessage struct {
@@ -162,4 +165,6 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 		return
 	}
 
+	// Reverts the CA back to the original one after new challenge was executed
+	w.Ca.PQCACME = false
 }

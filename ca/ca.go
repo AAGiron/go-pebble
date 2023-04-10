@@ -488,6 +488,7 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 	
 	// Case B)
 	} else {
+		ca.PQCACME = true
 		ca.AddPQChain(chainLength, dirToSaveRoot, pqChain, hybrid)
 	}
 
