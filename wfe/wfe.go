@@ -6,7 +6,7 @@ import (
 	"crypto"
 	"crypto/liboqs_sig"
 	"crypto/rsa"
-	"crypto/x509"	
+	"crypto/x509" 
 	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
@@ -23,7 +23,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
-    "runtime"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -129,6 +129,7 @@ const (
 var LoadTestFinalize bool
 var PerMessageTimingCSVPath string
 var MemoryCSVPath string
+var PortPQOrder string
 
 // newAccountRequest is the ACME account information submitted by the client
 type newAccountRequest struct {
@@ -174,10 +175,6 @@ type WebFrontEndImpl struct {
 }
 
 const ToSURL = "data:text/plain,Do%20what%20thou%20wilt"
-
-//if new challenge is present, saves the original CA
-var ClassicalCA *ca.CAImpl
-
 
 func New(
 	log *log.Logger,
@@ -652,8 +649,8 @@ func (wfe *WebFrontEndImpl) RelativeEndpoint(request *http.Request, endpoint str
 	}
 
 	//new challenge: replaces the port number. TODO: get pq-order/ port number generically
-	if strings.Contains(host, "10001") {
-		host = strings.Replace(host, "10001", "14000",1) 
+	if strings.Contains(host, PortPQOrder) {
+		host = strings.Replace(host, PortPQOrder, "14000",1) 
 	} 
 
 	return (&url.URL{Scheme: proto, Host: host, Path: endpoint}).String()
@@ -796,8 +793,8 @@ func (wfe *WebFrontEndImpl) LookupJWK(request *http.Request, jws *jose.JSONWebSi
 	prefix := wfe.RelativeEndpoint(request, acctPath)
 	
 	//new challenge: replaces the port number
-	if strings.Contains(accountURL, "10001") {
-		accountURL = strings.Replace(accountURL, "10001", "14000",1) 
+	if strings.Contains(accountURL, PortPQOrder) {
+		accountURL = strings.Replace(accountURL, PortPQOrder, "14000",1) 
 	} 
 
 	if !strings.HasPrefix(accountURL, prefix) {

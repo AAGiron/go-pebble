@@ -34,3 +34,4 @@ go run cmd/pebble/main.go \
 --pqorderroot ${sigAlgoPQC} \
 --pqorderissuer ${sigAlgoPQC} \
 -timingcsv ${PQCACME_TESTS_DIR}/measurements/pebble_issuance_time.csv \
+--pqorderport 10003 \

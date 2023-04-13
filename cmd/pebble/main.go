@@ -127,6 +127,11 @@ func main() {
 		"",
 		"A Root CA and Issuer CA will be created for pq-order/ so this flag specifies which PQC algorithm will be used (issuer CA).",
 	)
+	pqOrderPort := flag.Int(
+		"pqorderport",
+		10003,
+		"Set the port to ACME pq-order/ endpoint",			
+	)
 	
 
 	flag.Parse()
@@ -246,7 +251,8 @@ func main() {
 	if *newchallenge{
 		//sets defaults if config not present
 		if c.Pebble.PQOrderTLSPortAddress == 0 {
-			c.Pebble.PQOrderTLSPortAddress = 10001
+			c.Pebble.PQOrderTLSPortAddress = *pqOrderPort
+			wfe.PortPQOrder = strconv.Itoa(c.Pebble.PQOrderTLSPortAddress)
 		}
 		if c.Pebble.PQOrderListenAddress == "" {
 			c.Pebble.PQOrderListenAddress = "0.0.0.0:"+
