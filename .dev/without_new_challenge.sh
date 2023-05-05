@@ -26,11 +26,8 @@ echo "new-challenge:" ${sigAlgoPQC}
 go run cmd/pebble/main.go \
 -pqtls \
 -kex Kyber512 \
--newchallenge \
 -rootSig ${sigAlgo} \
 -interSig ${sigAlgo} \
 -issuerSig ${sigAlgo} \
 -rootdir ${PQCACME_TESTS_DIR}/root_ca \
---pqorderroot ${sigAlgoPQC} \
---pqorderissuer ${sigAlgoPQC} \
 -timingcsv ${PQCACME_TESTS_DIR}/measurements/pebble_issuance_time.csv \
