@@ -21,7 +21,8 @@
             // "-ocspresponsepath", "/home/vvc/Desktop/LabSec/teste/resourse/oscp_response", 
             "-interSig", "ECDSA-P256",
             "-issuerSig", "ECDSA-P256",
-            "-rootdir", "/home/vvc/Desktop/LabSec/codes/wrapped_certificates/go-hybrid-tests/root_ca"] 
+            "-rootdir", "/home/vvc/Desktop/LabSec/codes/acme-pqc/tests/root_ca",
+            ] 
         },
 
         {
@@ -35,9 +36,7 @@
             "dlvFlags": ["--check-go-version=false"],
             "args": ["-pqtls",
                      "-kex", "Kyber512",
-                     "-rootdir", "/home/vvc/Desktop/LabSec/codes/wrapped_certificates/go-hybrid-tests/root_ca",
-                     // "-timingcsv", "/home/vvc/Desktop/LabSec/teste/acme-newchallenge/tests/measurement/pebble_issuance_time.csv",
-                     //"-ocspresponsepath", "/home/vvc/Desktop/LabSec/teste/resourse/oscp_response",
+                     "-rootdir", "/home/vvc/Desktop/LabSec/codes/acme-pqc/tests/root_ca",
                      "-rootSig","Dilithium2", 
                      "-interSig", "Dilithium2",
                      "-issuerSig", "Dilithium2",]

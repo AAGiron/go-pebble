@@ -6,7 +6,7 @@ import (
 	"crypto"
 	"crypto/liboqs_sig"
 	"crypto/rsa"
-	"crypto/x509" 
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/csv"
 	"encoding/json"
@@ -649,9 +649,11 @@ func (wfe *WebFrontEndImpl) RelativeEndpoint(request *http.Request, endpoint str
 	}
 
 	//new challenge: replaces the port number. TODO: get pq-order/ port number generically
-	if strings.Contains(host, PortPQOrder) {
-		host = strings.Replace(host, PortPQOrder, "14000",1) 
-	} 
+	if (PortPQOrder) != "" {
+		if strings.Contains(host, PortPQOrder) {
+			host = strings.Replace(host, PortPQOrder, "14000",1) 
+		} 
+	}
 
 	return (&url.URL{Scheme: proto, Host: host, Path: endpoint}).String()
 }
@@ -793,9 +795,11 @@ func (wfe *WebFrontEndImpl) LookupJWK(request *http.Request, jws *jose.JSONWebSi
 	prefix := wfe.RelativeEndpoint(request, acctPath)
 	
 	//new challenge: replaces the port number
-	if strings.Contains(accountURL, PortPQOrder) {
-		accountURL = strings.Replace(accountURL, PortPQOrder, "14000",1) 
-	} 
+	if (PortPQOrder) != "" {
+		if strings.Contains(accountURL, PortPQOrder) {
+			accountURL = strings.Replace(accountURL, PortPQOrder, "14000",1) 
+		} 
+	}
 
 	if !strings.HasPrefix(accountURL, prefix) {
 		return nil, acme.MalformedProblem("Key ID (kid) in JWS header missing expected URL prefix")

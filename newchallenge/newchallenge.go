@@ -1,8 +1,10 @@
 package newchallenge
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -74,6 +76,18 @@ func (w *NewChallengeWFE) storePQOrder(rw http.ResponseWriter, orderID string,
 // // This function depends on GlobalWebFrontEnd variable (main.go)
 func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 	
+	//0. Check certificate hash
+	hashInHeader := req.Header.Get("certhash")
+	fmt.Println("certhash:", hashInHeader)
+	cert := req.TLS.PeerCertificates[0].Raw
+
+	h := sha256.Sum256(cert)
+	hashOfCert := hex.EncodeToString(h[:])
+
+	if (hashInHeader == hashOfCert) {
+		w.Log.Printf("Certhash field in header verified")
+	}
+
 	
 	//1. Parse request	
 	w.Log.Printf("Verifying a POST received at /pq-order...")
