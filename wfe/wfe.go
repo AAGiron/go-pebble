@@ -6,9 +6,11 @@ import (
 	"crypto"
 	"crypto/liboqs_sig"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -943,6 +945,17 @@ func (wfe *WebFrontEndImpl) extractJWSURL(
 	return headerURL, true
 }
 
+// Extracts CertHash header parameter from parsed JWS.
+// Second return value indicates whether header was found.
+func (wfe *WebFrontEndImpl) ExtractJWSCertHash(
+	parsedJWS *jose.JSONWebSignature) (string, bool) {
+	headerCertHash, ok := parsedJWS.Signatures[0].Header.ExtraHeaders[jose.HeaderKey("certhash")].(string)
+	if !ok || len(headerCertHash) == 0 {
+		return "", false
+	}
+	return headerCertHash, true
+}
+
 func (wfe *WebFrontEndImpl) verifyJWS(
 	pubKey *jose.JSONWebKey,
 	parsedJWS *jose.JSONWebSignature,
@@ -997,6 +1010,27 @@ func (wfe *WebFrontEndImpl) verifyJWS(
 			return nil, acme.MalformedProblem(fmt.Sprintf(
 				`JWS body included JSON with a deprecated ACME v1 "resource" field (%q)`,
 				bodyObj.Resource))
+		}
+	}
+	
+	// Check the certhash header field when Pebble receives post to pq-order/ endpoint
+	if (request.TLS.DidClientAuthentication) {
+		algorithm, err := algorithmForKey(pubKey)
+		if err != nil {
+			return nil, acme.BadPublicKeyProblem(err.Error())
+		}
+		if (request.TLS.PeerCertificates[0].PublicKeyAlgorithm.String() != "" && stringIsLiboqs(algorithm) != "") {
+			headerCertHash, ok := wfe.ExtractJWSCertHash(parsedJWS)
+			if !ok {
+				return nil, acme.MalformedProblem("JWS header parameter 'Certhash' required.")
+			}
+			h := sha256.Sum256(request.TLS.PeerCertificates[0].Raw)
+			hashOfCert := hex.EncodeToString(h[:])
+
+			// 3. Compare them
+			if (headerCertHash == hashOfCert) {
+				wfe.Log.Printf("Certhash field verified")
+			}
 		}
 	}
 
@@ -3025,4 +3059,20 @@ func PrintMemUsage(ctx string) {
 
 func bToMb(b uint64) uint64 {
     return b / 1024 / 1024
+}
+
+// Exported from go-jose
+func stringIsLiboqs(alg string) string {
+	var liboqsAlgorithmsStrings = []string{	"Dilithium2", "Dilithium3", "Dilithium5", "Falcon-512", "Falcon-1024", "sphincs+-shake256-128s-simple", "sphincs+-SHAKE256-256s-simple", 
+										"P256_Dilithium2", "P256_Falcon-512", "P256_sphincs+-shake256-128s-simple", 
+										"P384_Dilithium3", 
+										"P521_Dilithium5", "P521_Falcon-1024", "P521_sphincs+-SHAKE256-256s-simple"}
+
+
+	for _, v  := range liboqsAlgorithmsStrings {
+		if v == alg {
+			return alg
+		}
+	}	
+	return ""
 }
