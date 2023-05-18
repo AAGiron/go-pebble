@@ -118,12 +118,34 @@ func makeSubjectKeyID(key crypto.PublicKey) ([]byte, error) {
 	return ski[:], nil
 }
 
+func makeKey(classicAlgorithm string) (crypto.Signer, []byte, error) {
+	var key crypto.Signer 
+	var ski []byte
+	var err error
+	
+	switch classicAlgorithm {
+	case "ECDSA-P256", "ECDSA-P384", "ECDSA-P521":
+		key, ski, err = makeECDSAKey(classicAlgorithm)
+	case "RSA-2048", "RSA-4096":
+		key, ski, err = makeRSAKey(classicAlgorithm)
+	}
+	return key, ski, err
+}
+
 // makeKey and makeRootCert are adapted from MiniCA:
 // https://github.com/jsha/minica/blob/3a621c05b61fa1c24bcb42fbde4b261db504a74f/main.go
 
 // makeKey creates a new 2048 bit RSA private key and a Subject Key Identifier
-func makeKey() (*rsa.PrivateKey, []byte, error) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+func makeRSAKey(classicAlgorithm string) (*rsa.PrivateKey, []byte, error) {
+	var key *rsa.PrivateKey
+	var err error
+	switch classicAlgorithm {
+	case "RSA-2048":
+		key, err = rsa.GenerateKey(rand.Reader, 2048)
+	case "RSA-4096":
+		key, err = rsa.GenerateKey(rand.Reader, 4096)
+
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -219,11 +241,8 @@ func (ca *CAImpl) makeRootCert(
 
 func (ca *CAImpl) newRootIssuer(name string) (*issuer, error) {
 	// Make a root private key
-	rk, subjectKeyID, err := makeECDSAKey(RootSig)
-
-	if err != nil {
-		return nil, err
-	}
+	rk, subjectKeyID, err := makeKey(RootSig)
+	
 	// Make a self-signed root certificate
 	subject := pkix.Name{
 		CommonName: rootCAPrefix + name,
@@ -292,7 +311,7 @@ func (ca *CAImpl) newChain(intermediateKey crypto.Signer, intermediateSubject pk
 	prev := root
 	intermediates := make([]*issuer, numIntermediates)
 	for i := numIntermediates - 1; i > 0; i-- {
-		k, ski, err := makeKey()
+		k, ski, err := makeKey(InterSig)
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate issuer: %v", err))
 		}
@@ -476,7 +495,7 @@ func New(log *log.Logger, db *db.MemoryStore, ocspResponderURL string, alternate
 			CommonName: intermediateCAPrefix + hex.EncodeToString(makeSerial().Bytes()[:3]),
 		}
 
-		intermediateKey, subjectKeyID, err := makeECDSAKey(InterSig)
+		intermediateKey, subjectKeyID, err := makeKey(InterSig)
 
 		if err != nil {
 			panic(fmt.Sprintf("Error creating new intermediate private key: %s", err.Error()))

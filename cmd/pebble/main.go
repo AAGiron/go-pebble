@@ -170,11 +170,14 @@ func main() {
 	}
 
 	pqChain := []string{"", "", ""}
-	ecdsaRegex := regexp.MustCompile(`ECDSA`)		
+	ecdsaRegex := regexp.MustCompile(`ECDSA`)
+	rsaRegex := regexp.MustCompile(`RSA`)		
 	
-	if !ecdsaRegex.MatchString(*rootSig) && !ecdsaRegex.MatchString(*interSig) && !ecdsaRegex.MatchString(*issuerSig) {
+	if !ecdsaRegex.MatchString(*rootSig) && !ecdsaRegex.MatchString(*interSig) && !ecdsaRegex.MatchString(*issuerSig) &&
+	   !rsaRegex.MatchString(*rootSig) && !rsaRegex.MatchString(*interSig) && !rsaRegex.MatchString(*issuerSig){
 		pqChain = []string{*rootSig, *interSig, *issuerSig}			
-	} else if ecdsaRegex.MatchString(*rootSig) && ecdsaRegex.MatchString(*interSig) && ecdsaRegex.MatchString(*issuerSig) {
+	} else if ecdsaRegex.MatchString(*rootSig) && ecdsaRegex.MatchString(*interSig) && ecdsaRegex.MatchString(*issuerSig) ||
+	          rsaRegex.MatchString(*rootSig) && rsaRegex.MatchString(*interSig) && rsaRegex.MatchString(*issuerSig) {
 		ca.RootSig = *rootSig
 		ca.InterSig = *interSig
 		ca.IssuerSig = *issuerSig		
