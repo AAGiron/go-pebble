@@ -1,10 +1,9 @@
 package newchallenge
 
 import (
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
+
 	"encoding/json"
 	"fmt"
 	"net"
@@ -75,18 +74,6 @@ func (w *NewChallengeWFE) storePQOrder(rw http.ResponseWriter, orderID string,
 // Entry point
 // // This function depends on GlobalWebFrontEnd variable (main.go)
 func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Request){
-	
-	//0. Check certificate hash
-	hashInHeader := req.Header.Get("certhash")
-	fmt.Println("certhash:", hashInHeader)
-	cert := req.TLS.PeerCertificates[0].Raw
-
-	h := sha256.Sum256(cert)
-	hashOfCert := hex.EncodeToString(h[:])
-
-	if (hashInHeader == hashOfCert) {
-		w.Log.Printf("Certhash field in header verified")
-	}
 
 	
 	//1. Parse request	
@@ -97,6 +84,9 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 		w.SendError(prob, rw)
 		return
 	}
+
+	//0. Check Cert Hash
+	// w.verifyCertHash(postData.HeaderHash, req.TLS.PeerCertificates[0].Raw)
 
 	// Set pebble to use post-quantum PKI to issue the certificate
 	w.Ca.PQCACME = true
@@ -128,6 +118,7 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 		return
 	}
 
+	parsedCSR.PublicKeyAlgorithm.String()
 	csrDNSs := wfe.UniqueLowerNames(parsedCSR.DNSNames)
 	csrIPs := wfe.UniqueIPs(parsedCSR.IPAddresses)
 
@@ -182,3 +173,39 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 	// Reverts the CA back to the original one after new challenge was executed
 	w.Ca.PQCACME = false
 }
+
+// func (w *NewChallengeWFE) verifyCertHash(headerCertHash string, cert []byte) bool {
+// 	// bodyBytes, err := ioutil.ReadAll(request.Body)
+// 	// if err != nil {
+// 	// 	w.WebFrontEndImpl.Log.Printf("não conseguiu ler os bytes body")
+// 	// 	w.SendError(acme.InternalErrorProblem("unable to read request body"), rw)
+// 	// }
+
+// 	// body := string(bodyBytes)
+// 	// parsedJWS, err := w.WebFrontEndImpl.ParseJWS(body)
+// 	// if err != nil {
+// 	// 	w.WebFrontEndImpl.Log.Printf("não conseguiu converter bytes em *jose.JSONWebSignature")
+// 	// }
+
+// 	// // 1. Get the hash of certificate in the header.
+// 	// headerCertHash, ok := w.WebFrontEndImpl.ExtractJWSCertHash(parsedJWS)
+// 	// if !ok {
+// 	// 	w.WebFrontEndImpl.Log.Printf("não conseguiu pegar o cert hash")
+// 	// }
+
+// 	// 2. Calculates the hash of the certificated received
+
+
+// 	// cert := request.TLS.PeerCertificates[0].Raw
+// 	h := sha256.Sum256(cert)
+// 	hashOfCert := hex.EncodeToString(h[:])
+
+// 	// 3. Compare them
+// 	if (headerCertHash == hashOfCert) {
+// 		w.WebFrontEndImpl.Log.Printf("Certhash field in header verified")
+// 		return true
+// 	}
+
+// 	return false
+
+// }
