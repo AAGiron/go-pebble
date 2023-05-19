@@ -268,6 +268,7 @@ func (m *MemoryStore) FindValidAuthorization(accountID string, identifier acme.I
 		authz.RLock()
 		if authz.Status == acme.StatusValid && identifier.Equals(authz.Identifier) &&
 			authz.Order != nil && authz.Order.AccountID == accountID &&
+			jose.StringIsLiboqs(m.GetAccountByID(accountID).Key.Algorithm) == "" &&
 			authz.ExpiresDate.After(time.Now()) {
 			authz.RUnlock()
 			return authz

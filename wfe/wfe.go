@@ -1019,7 +1019,7 @@ func (wfe *WebFrontEndImpl) verifyJWS(
 		if err != nil {
 			return nil, acme.BadPublicKeyProblem(err.Error())
 		}
-		if (request.TLS.PeerCertificates[0].PublicKeyAlgorithm.String() != "" && stringIsLiboqs(algorithm) != "") {
+		if (request.TLS.PeerCertificates[0].PublicKeyAlgorithm.String() != "" && jose.StringIsLiboqs(algorithm) != "") {
 			headerCertHash, ok := wfe.ExtractJWSCertHash(parsedJWS)
 			if !ok {
 				return nil, acme.MalformedProblem("JWS header parameter 'Certhash' required.")
@@ -3059,20 +3059,4 @@ func PrintMemUsage(ctx string) {
 
 func bToMb(b uint64) uint64 {
     return b / 1024 / 1024
-}
-
-// Exported from go-jose
-func stringIsLiboqs(alg string) string {
-	var liboqsAlgorithmsStrings = []string{	"Dilithium2", "Dilithium3", "Dilithium5", "Falcon-512", "Falcon-1024", "sphincs+-shake256-128s-simple", "sphincs+-SHAKE256-256s-simple", 
-										"P256_Dilithium2", "P256_Falcon-512", "P256_sphincs+-shake256-128s-simple", 
-										"P384_Dilithium3", 
-										"P521_Dilithium5", "P521_Falcon-1024", "P521_sphincs+-SHAKE256-256s-simple"}
-
-
-	for _, v  := range liboqsAlgorithmsStrings {
-		if v == alg {
-			return alg
-		}
-	}	
-	return ""
 }
