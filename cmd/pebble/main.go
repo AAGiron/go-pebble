@@ -279,14 +279,13 @@ func main() {
 		}
 		
 		
-		if *pqOrderRoot == "" || *pqOrderIssuer == ""{
-			panic("If new challenge you must provide --pqOrderRoot and --pqOrderIssuer algorithms")
+		if *pqOrderRoot != "" || *pqOrderIssuer != ""{
+			pqOrderChain := []string{*pqOrderRoot, *pqOrderIssuer, *pqOrderIssuer}
+
+			// PQCACME Modification: Creates a second CA chain (PQC one for the new challenge)
+			caImpl.AddPQChain(chainLength, *dirToSaveRoot, pqOrderChain, *hybrid)
 		}
-		pqOrderChain := []string{*pqOrderRoot, *pqOrderIssuer, *pqOrderIssuer}
-
-		// PQCACME Modification: Creates a second CA chain (PQC one for the new challenge)
-		caImpl.AddPQChain(chainLength, *dirToSaveRoot, pqOrderChain, *hybrid)
-
+		
 		// Grabs WFE instance
 		grabbedWFE := &nc.NewChallengeWFE{WebFrontEndImpl: wfeImpl}
 	

@@ -13,13 +13,14 @@ import (
 	"github.com/letsencrypt/pebble/v2/acme"
 	"github.com/letsencrypt/pebble/v2/core"
 	"github.com/letsencrypt/pebble/v2/wfe"
+	"gopkg.in/square/go-jose.v2"
 )
 
 type NewChallengeWFE struct {
 	wfe.WebFrontEndImpl
 }
 
-// PQCACME Modification: storePQOrder store a pq-rder in the DB. 
+// PQCACME Modification: storePQOrder store a pq-order in the DB. 
 func (w *NewChallengeWFE) storePQOrder(rw http.ResponseWriter, orderID string, 
 					csrDNSs []string, csrIPs []net.IP,
 					accountID string, parsedCSR *x509.CertificateRequest) (*core.Order){
@@ -74,9 +75,6 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	// Set pebble to use post-quantum PKI to issue the certificate
-	w.Ca.PQCACME = true
-
 	//2. There is no order (yet), so go straight parsing and processing CSR to issue a PQ certificate
 	var finalizeMessage struct {
 		CSR string
@@ -103,7 +101,12 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	parsedCSR.PublicKeyAlgorithm.String()
+	// Set pebble to use post-quantum PKI to issue the certificate
+	if (jose.StringIsLiboqs(parsedCSR.SignatureAlgorithm.String()) != "") {
+		w.Ca.PQCACME = true
+	}
+	
+
 	csrDNSs := wfe.UniqueLowerNames(parsedCSR.DNSNames)
 	csrIPs := wfe.UniqueIPs(parsedCSR.IPAddresses)
 
