@@ -172,8 +172,6 @@ type WebFrontEndImpl struct {
 	Ca                *ca.CAImpl
 	strict            bool
 	requireEAB        bool
-	//new acme challenge integrations
-	//newacme 		  *acme.NewCHImpl
 }
 
 const ToSURL = "data:text/plain,Do%20what%20thou%20wilt"
@@ -183,9 +181,6 @@ func New(
 	db *db.MemoryStore,
 	va *va.VAImpl,
 	ca *ca.CAImpl,
-
-	//new acme challenge integrations
-	//newacme *acme.NewCHImpl,
 
 	strict, requireEAB bool) WebFrontEndImpl {
 	// Seed rand from the current time so test environments don't always have
@@ -541,9 +536,6 @@ func (wfe *WebFrontEndImpl) Handler() http.Handler {
 	wfe.HandleFunc(m, challengePath, wfe.Challenge, http.MethodPost)
 	wfe.HandleFunc(m, ordersPath, wfe.ListOrders, http.MethodPost)
 
-	//new acme challenge handler
-	//wfe.HandleFunc(m,newChallengePath, wfe.newacme.handlePQOrder, http.MethodPost)
-
 	return m
 }
 
@@ -650,7 +642,7 @@ func (wfe *WebFrontEndImpl) RelativeEndpoint(request *http.Request, endpoint str
 		host = "localhost"
 	}
 
-	//new challenge: replaces the port number. TODO: get pq-order/ port number generically
+	//new challenge: replaces the port number
 	if (PortPQOrder) != "" {
 		if strings.Contains(host, PortPQOrder) {
 			host = strings.Replace(host, PortPQOrder, "14000",1) 

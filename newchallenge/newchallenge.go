@@ -20,12 +20,9 @@ type NewChallengeWFE struct {
 }
 
 // PQCACME Modification: storePQOrder store a pq-rder in the DB. 
-// // Follows wfe.go and memorystore.go
 func (w *NewChallengeWFE) storePQOrder(rw http.ResponseWriter, orderID string, 
 					csrDNSs []string, csrIPs []net.IP,
 					accountID string, parsedCSR *x509.CertificateRequest) (*core.Order){
-
-	//??: VVC: Populate not after and notBefore from CSR? In newOrder
 
 	// Change unique names to acme.identifier object
 	var uniquenames []acme.Identifier
@@ -37,7 +34,6 @@ func (w *NewChallengeWFE) storePQOrder(rw http.ResponseWriter, orderID string,
 	}
 
 	expires := time.Now().AddDate(0, 0, 1) 
-	//??: VVC:maybe this could be checked in the future (new() instead of pointing to the struct)
 	order := &core.Order{
 		ID:        		 orderID,
 		AccountID: 		 accountID,
@@ -46,12 +42,11 @@ func (w *NewChallengeWFE) storePQOrder(rw http.ResponseWriter, orderID string,
 			Expires: 	 expires.UTC().Format(time.RFC3339),
 			Identifiers: uniquenames,
 			NotBefore:   time.Now().Format(time.RFC3339),
-			NotAfter:    time.Now().AddDate(0, 0, 90).Format(time.RFC3339), //let's encrypt example
+			NotAfter:    time.Now().AddDate(0, 0, 90).Format(time.RFC3339), 
 		},
 		ExpiresDate: 	 expires,
-		BeganProcessing: true, //need this in ca.go CompleteOrder
+		BeganProcessing: true,
 		ParsedCSR: 		 parsedCSR,
-		//AuthorizationObjects: []*Authorization hope that range order.AuthorizationObjects returns 0 in ca.go
 	}
 
 	// Add order to the WFE db
@@ -66,13 +61,7 @@ func (w *NewChallengeWFE) storePQOrder(rw http.ResponseWriter, orderID string,
 	return order
 }
 
-// // Wrapper to call issuance from ca.go
-// func (w *NewChallengeWFE) issuePQCert(order *core.Order){
-// 	w.Ca.CompleteOrder(order) 
-// }
-
-// Entry point
-// // This function depends on GlobalWebFrontEnd variable (main.go)
+// PQCACME Modification: Entry point to our new challenge work properly.
 func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Request){
 
 	
@@ -85,18 +74,14 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	//0. Check Cert Hash
-	// w.verifyCertHash(postData.HeaderHash, req.TLS.PeerCertificates[0].Raw)
-
 	// Set pebble to use post-quantum PKI to issue the certificate
 	w.Ca.PQCACME = true
 
-	//2. There is no order (yet), so go straight parsing and processing CSR 
-	//to issue a PQ certificate
+	//2. There is no order (yet), so go straight parsing and processing CSR to issue a PQ certificate
 	var finalizeMessage struct {
 		CSR string
 	}
-	//??: VVC: There is something to do here?: might throw an error here: our finalize has more things in the body	
+
 	err := json.Unmarshal(postData.Body, &finalizeMessage)
 	if err != nil {
 		w.SendError(acme.MalformedProblem(fmt.Sprintf(
@@ -135,15 +120,16 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	//?? : VVC: Sould we store indirectly?
 	// 4. Store a new order directly
 	orderID := wfe.RandomString(32)
+	
 	// Get the ID to store the order
 	existingAcct, prob := w.GetAcctByKey(postData.Jwk)
 	if prob != nil {
 		w.SendError(prob, rw)
 		return
 	}
+	
 	// Store the valid order in the DB.
 	existingOrder := w.storePQOrder(rw, orderID,csrDNSs, csrIPs, existingAcct.ID, parsedCSR)
 	if existingOrder == nil {
@@ -156,14 +142,10 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 	//5. Issue the certificate 
 	existingOrder.Status = acme.StatusValid
 	w.Ca.CompleteOrder(existingOrder) 
-	
-	// ??: VVC: Why should we still use a wapper to issue a certificate? 
-	// w.issuePQCert(existingOrder)
 
 	//6. Prepare the order for display as JSON and create URL for download.
-	orderReq := w.OrderForDisplay(existingOrder, req)	          //export orderPath //in wfe?
-	//orderURL := w.RelativeEndpoint(req, fmt.Sprintf("%s%s", "/my-order/", existingOrder.ID))
-	//rw.Header().Add("Location", orderURL)
+	orderReq := w.OrderForDisplay(existingOrder, req)	         
+	
 	err = w.WriteJSONResponse(rw, http.StatusOK, orderReq)
 	if err != nil {
 		w.SendError(acme.InternalErrorProblem("Error marshaling order"), rw)
@@ -173,39 +155,3 @@ func (w *NewChallengeWFE) HandlePQOrder(rw http.ResponseWriter, req *http.Reques
 	// Reverts the CA back to the original one after new challenge was executed
 	w.Ca.PQCACME = false
 }
-
-// func (w *NewChallengeWFE) verifyCertHash(headerCertHash string, cert []byte) bool {
-// 	// bodyBytes, err := ioutil.ReadAll(request.Body)
-// 	// if err != nil {
-// 	// 	w.WebFrontEndImpl.Log.Printf("não conseguiu ler os bytes body")
-// 	// 	w.SendError(acme.InternalErrorProblem("unable to read request body"), rw)
-// 	// }
-
-// 	// body := string(bodyBytes)
-// 	// parsedJWS, err := w.WebFrontEndImpl.ParseJWS(body)
-// 	// if err != nil {
-// 	// 	w.WebFrontEndImpl.Log.Printf("não conseguiu converter bytes em *jose.JSONWebSignature")
-// 	// }
-
-// 	// // 1. Get the hash of certificate in the header.
-// 	// headerCertHash, ok := w.WebFrontEndImpl.ExtractJWSCertHash(parsedJWS)
-// 	// if !ok {
-// 	// 	w.WebFrontEndImpl.Log.Printf("não conseguiu pegar o cert hash")
-// 	// }
-
-// 	// 2. Calculates the hash of the certificated received
-
-
-// 	// cert := request.TLS.PeerCertificates[0].Raw
-// 	h := sha256.Sum256(cert)
-// 	hashOfCert := hex.EncodeToString(h[:])
-
-// 	// 3. Compare them
-// 	if (headerCertHash == hashOfCert) {
-// 		w.WebFrontEndImpl.Log.Printf("Certhash field in header verified")
-// 		return true
-// 	}
-
-// 	return false
-
-// }
