@@ -1,3 +1,4 @@
 [submodule "go-jose"]
 	path = go-jose
-	url = git@gitlab.labsec.ufsc.br:equipe-icp/pqc/go-jose.git
+	url =  github.com/AAGiron/go-jose
+	branch = clean-code
