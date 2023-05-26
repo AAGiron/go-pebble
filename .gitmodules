@@ -1,4 +1,4 @@
 [submodule "go-jose"]
 	path = go-jose
-	url =  github.com/AAGiron/go-jose
+	url =  https://github.com/AAGiron/go-jose.git
 	branch = clean-code
