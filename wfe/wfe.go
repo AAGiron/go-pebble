@@ -7,6 +7,7 @@ import (
 	"crypto/liboqs_sig"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/csv"
@@ -51,16 +52,17 @@ const (
 	acctPath          = "/my-account/"
 	newOrderPath      = "/order-plz"
 	orderPath         = "/my-order/"
-	orderFinalizePath = "/finalize-order/"
-	authzPath         = "/authZ/"
-	challengePath     = "/chalZ/"
-	certPath          = "/certZ/"
-	revokeCertPath    = "/revoke-cert"
-	keyRolloverPath   = "/rollover-account-key"
-	ordersPath        = "/list-orderz/"
+	orderFinalizePath       = "/finalize-order/"
+	authzPath               = "/authZ/"
+	challengePath           = "/chalZ/"
+	certPath                = "/certZ/"
+	revokeCertPath          = "/revoke-cert"
+	keyRolloverPath         = "/rollover-account-key"
+	ordersPath              = "/list-orderz/"
+	supportedCertAlgorithms = "/cert-algorithms"
 
 	//new-challenge endpoint: also exported (uppercase initial) to pebble main
-	NewChallengePath	  = "/pq-order"
+	NewChallengePath = "/pq-order"
 
 	// Theses entrypoints are not a part of the standard ACME endpoints,
 	// and are exposed by Pebble as an integration test tool. We export
@@ -113,9 +115,9 @@ const (
 
 	// The default value when PEBBLE_WFE_AUTHZREUSE is not set, how often to try
 	// and reuse valid authorizations.
-//	defaultAuthzReuse = 50
+	//	defaultAuthzReuse = 50
 	defaultAuthzReuse = 0
-//	defaultAuthzReuse = 100
+	//	defaultAuthzReuse = 100
 
 	// ordersPerPageEnvVar defines the environment variable name used to provide
 	// the number of orders to show per page. To have the WFE show 15 orders per
@@ -516,6 +518,67 @@ func (wfe *WebFrontEndImpl) handleCertStatusBySerial(
 	}
 }
 
+ func (wfe *WebFrontEndImpl) HandleSupportedCertAlgorithms (
+ 	ctx context.Context,
+ 	response http.ResponseWriter,
+ 	request *http.Request) {
+
+
+	pqtls := acme.PQTLSAlgo{
+		Dilithium2: x509.OidFromLiboqsSig(liboqs_sig.Dilithium2).String(),
+		Falcon512: x509.OidFromLiboqsSig(liboqs_sig.Falcon512).String(),
+		SphincsShake128sSimple: x509.OidFromLiboqsSig(liboqs_sig.SphincsShake128sSimple).String(),
+		Dilithium3: x509.OidFromLiboqsSig(liboqs_sig.Dilithium3).String(),
+		Dilithium5: x509.OidFromLiboqsSig(liboqs_sig.Dilithium5).String(),
+		Falcon1024: x509.OidFromLiboqsSig(liboqs_sig.Falcon1024).String(),
+		SphincsShake256sSimple: x509.OidFromLiboqsSig(liboqs_sig.SphincsShake256sSimple).String(),
+		P256Dilithium2: x509.OidFromLiboqsSig(liboqs_sig.P256_Dilithium2).String(),
+		P256Falcon512: x509.OidFromLiboqsSig(liboqs_sig.P256_Falcon512).String(),
+		P256SphincsShake128sSimple: x509.OidFromLiboqsSig(liboqs_sig.P256_SphincsShake128sSimple).String(),
+		P384Dilithium3: x509.OidFromLiboqsSig(liboqs_sig.P384_Dilithium3).String(),
+		P521Dilithium5: x509.OidFromLiboqsSig(liboqs_sig.P521_Dilithium5).String(),
+		P521Falcon1024: x509.OidFromLiboqsSig(liboqs_sig.P521_Falcon1024).String(),
+		P521SphincsShake256sSimple: x509.OidFromLiboqsSig(liboqs_sig.P521_SphincsShake256sSimple).String(),
+	}
+
+	kem :=  acme.KEMTLSAlgo{
+
+		KEMTLSWithFireSaber_KEM : tls.StringKEM(tls.KEMTLSWithP521_FireSaber_KEM),
+		KEMTLSWithP256_Kyber512 : tls.StringKEM(tls.KEMTLSWithP256_Kyber512),
+		KEMTLSWithP384_Kyber768 : tls.StringKEM(tls.KEMTLSWithP384_Kyber768),
+		KEMTLSWithP521_Kyber1024 :  tls.StringKEM(tls.KEMTLSWithP521_Kyber1024),
+		KEMTLSWithP256_LightSaber_KEM :  tls.StringKEM(tls.KEMTLSWithP256_LightSaber_KEM),
+		KEMTLSWithP384_Saber_KEM :  tls.StringKEM(tls.KEMTLSWithP384_Saber_KEM),
+		KEMTLSWithP521_FireSaber_KEM :  tls.StringKEM(tls.KEMTLSWithP521_FireSaber_KEM),
+		KEMTLSWithP256_NTRU_HPS_2048_509 :  tls.StringKEM(tls.KEMTLSWithP256_NTRU_HPS_2048_509),
+		KEMTLSWithP384_NTRU_HPS_2048_677 :  tls.StringKEM(tls.KEMTLSWithP384_NTRU_HPS_2048_677),
+		KEMTLSWithP521_NTRU_HPS_4096_821 :  tls.StringKEM(tls.KEMTLSWithP521_NTRU_HPS_4096_821),
+		KEMTLSWithP521_NTRU_HPS_4096_1229 :  tls.StringKEM(tls.KEMTLSWithP521_NTRU_HPS_4096_1229),
+		KEMTLSWithP384_NTRU_HRSS_701 :  tls.StringKEM(tls.KEMTLSWithP384_NTRU_HRSS_701),
+		KEMTLSWithP521_NTRU_HRSS_1373 :  tls.StringKEM(tls.KEMTLSWithP521_NTRU_HRSS_1373),
+
+	}
+	
+
+	kempop := acme.KEMPOPAlgo {
+		Kyber: "Unsupported",
+		Frodo: "Unsupported",
+	}
+	
+	message := acme.SupportedCertAlgorithmsMessage{
+		PQTLS: pqtls,
+		KEMTLS: kem,
+		KEMPOP: kempop,
+
+	}
+
+ 	err := wfe.WriteJSONResponse(response, http.StatusOK, message)
+ 	if err != nil {
+ 		response.WriteHeader(http.StatusInternalServerError)
+ 		return
+ 	}
+ }
+
 func (wfe *WebFrontEndImpl) Handler() http.Handler {
 	m := http.NewServeMux()
 	// GET & POST handlers
@@ -534,7 +597,12 @@ func (wfe *WebFrontEndImpl) Handler() http.Handler {
 	wfe.HandleFunc(m, orderPath, wfe.Order, http.MethodPost)
 	wfe.HandleFunc(m, authzPath, wfe.Authz, http.MethodPost)
 	wfe.HandleFunc(m, challengePath, wfe.Challenge, http.MethodPost)
-	wfe.HandleFunc(m, ordersPath, wfe.ListOrders, http.MethodPost)
+	// wfe.HandleFunc(m, ordersPath, wfe.ListOrders, http.MethodPost)
+
+	// GET only handlers
+	wfe.HandleFunc(m, supportedCertAlgorithms, wfe.HandleSupportedCertAlgorithms, http.MethodGet)
+
+	
 
 	return m
 }
@@ -567,6 +635,7 @@ func (wfe *WebFrontEndImpl) Directory(
 		"newOrder":   newOrderPath,
 		"revokeCert": revokeCertPath,
 		"keyChange":  keyRolloverPath,
+		"supportedCertAlgorithms": supportedCertAlgorithms,
 	}
 
 	// RFC 8555 §6.3 says the server's directory endpoint should support
@@ -645,8 +714,8 @@ func (wfe *WebFrontEndImpl) RelativeEndpoint(request *http.Request, endpoint str
 	//new challenge: replaces the port number
 	if (PortPQOrder) != "" {
 		if strings.Contains(host, PortPQOrder) {
-			host = strings.Replace(host, PortPQOrder, "14000",1) 
-		} 
+			host = strings.Replace(host, PortPQOrder, "14000",1)
+		}
 	}
 
 	return (&url.URL{Scheme: proto, Host: host, Path: endpoint}).String()
@@ -656,7 +725,7 @@ func (wfe *WebFrontEndImpl) Nonce(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
-	
+
 	//AAG: computing processing time
 	timer := time.Now
 	start := timer()
@@ -787,12 +856,12 @@ func (wfe *WebFrontEndImpl) LookupJWK(request *http.Request, jws *jose.JSONWebSi
 	header := jws.Signatures[0].Header
 	accountURL := header.KeyID
 	prefix := wfe.RelativeEndpoint(request, acctPath)
-	
+
 	//new challenge: replaces the port number
 	if (PortPQOrder) != "" {
 		if strings.Contains(accountURL, PortPQOrder) {
-			accountURL = strings.Replace(accountURL, PortPQOrder, "14000",1) 
-		} 
+			accountURL = strings.Replace(accountURL, PortPQOrder, "14000",1)
+		}
 	}
 
 	if !strings.HasPrefix(accountURL, prefix) {
@@ -1004,7 +1073,7 @@ func (wfe *WebFrontEndImpl) verifyJWS(
 				bodyObj.Resource))
 		}
 	}
-	
+
 	// Check the certhash header field when Pebble receives post to pq-order/ endpoint
 	if (request.TLS.DidClientAuthentication) {
 		algorithm, err := algorithmForKey(pubKey)
@@ -1020,7 +1089,7 @@ func (wfe *WebFrontEndImpl) verifyJWS(
 			hashOfCert := hex.EncodeToString(h[:])
 
 			// 3. Compare them
-			if (headerCertHash == hashOfCert) {
+	if (headerCertHash == hashOfCert) {
 				wfe.Log.Printf("Certhash field verified")
 			}
 		}
@@ -1729,7 +1798,7 @@ func (wfe *WebFrontEndImpl) NewOrder(
 	//AAG: computing processing time
 	timer := time.Now
 	start := timer()
-	
+
 	postData, prob := wfe.VerifyPOST(request, wfe.LookupJWK)
 	if prob != nil {
 		wfe.SendError(prob, response)
@@ -1949,7 +2018,7 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 			wfe.SendError(prob, response)
 			return
 		}
-	}	
+	}
 
 	// Find the account corresponding to the key that authenticated the POST request
 	existingAcct, prob := wfe.GetAcctByKey(postData.Jwk)
@@ -1991,7 +2060,7 @@ func (wfe *WebFrontEndImpl) FinalizeOrder(
 				"Order's status (%q) was not %s", orderStatus, acme.StatusReady)), response)
 			return
 		}
-	}	
+	}
 
 	// The existing order must not be expired
 	if orderExpires.Before(time.Now()) {
@@ -2161,7 +2230,7 @@ func (wfe *WebFrontEndImpl) Authz(
 	ctx context.Context,
 	response http.ResponseWriter,
 	request *http.Request) {
-	
+
 	//AAG: computing processing time
 	timer := time.Now
 	start := timer()
@@ -2283,11 +2352,11 @@ func (wfe *WebFrontEndImpl) Challenge(
 	var account *core.Account
 	if !postData.postAsGet {
 		wfe.updateChallenge(postData, response, request)
-			//Computing processing time
-			elapsedTime := timer().Sub(start)
-			if PerMessageTimingCSVPath != "" {
-				writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/chalZ")
-			}
+		//Computing processing time
+		elapsedTime := timer().Sub(start)
+		if PerMessageTimingCSVPath != "" {
+			writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/chalZ")
+		}
 		return
 	} else {
 		// Otherwise it is case B)
@@ -2608,7 +2677,7 @@ func (wfe *WebFrontEndImpl) Certificate(
 	if PerMessageTimingCSVPath != "" {
 		writeElapsedTime(float64(elapsedTime)/float64(time.Millisecond), "/certDownload")
 	}
-	if MemoryCSVPath != "" {		
+	if MemoryCSVPath != "" {
 		//saving memory stats
 		PrintMemUsage("/certDownload")
 	}
@@ -2984,7 +3053,6 @@ func (wfe *WebFrontEndImpl) verifyEABMatchesKey(payload []byte, jwk *jose.JSONWe
 	return nil
 }
 
-
 //writeElapsedTime stores measured time function
 func writeElapsedTime(elapsedTime float64, contextEndpoint string) {
 	var toWrite []string
@@ -2993,11 +3061,11 @@ func writeElapsedTime(elapsedTime float64, contextEndpoint string) {
 	if err != nil {
 		log.Fatalf("failed opening file: %s", err)
 	}
-	
+
 	csvwriter := csv.NewWriter(csvFile)
 	csvReader := csv.NewReader(csvFile)
 	_, err = csvReader.Read()
-	if err == io.EOF {	///getDir", "/newNonce", "/newAccount", "/newOrder", "/authZ", "/chalZ", "/authZ",
+	if err == io.EOF {///getDir", "/newNonce", "/newAccount", "/newOrder", "/authZ", "/chalZ", "/authZ",
 		toWrite = []string{"ContextEndpoint", "Time (ms)"}
 		if err := csvwriter.Write(toWrite); err != nil {
 			log.Fatalf("error writing record to file. err: %s", err)
@@ -3005,50 +3073,49 @@ func writeElapsedTime(elapsedTime float64, contextEndpoint string) {
 	}
 
 	toWrite = []string{contextEndpoint, fmt.Sprintf("%f", elapsedTime)}
-	
+
 	if err := csvwriter.Write(toWrite); err != nil {
 		log.Fatalln("error writing record to file", err)
 	}
-	
+
 	csvwriter.Flush()
 	csvFile.Close()
 }
 
-
 // PrintMemUsage metrics, from here https://gist.github.com/j33ty/79e8b736141be19687f565ea4c6f4226
-// PrintMemUsage outputs the current, total and OS memory being used. As well as the number 
+// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
 // of garage collection cycles completed.
 func PrintMemUsage(ctx string) {
-    var m runtime.MemStats
-    runtime.ReadMemStats(&m)
-    // For info on each, see: https://golang.org/pkg/runtime/#MemStats
- 	var toWrite []string
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	var toWrite []string
 
 	csvFile, err := os.OpenFile(MemoryCSVPath, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		log.Fatalf("failed opening file: %s", err)
 	}
-	
+
 	csvwriter := csv.NewWriter(csvFile)
 	csvReader := csv.NewReader(csvFile)
 	_, err = csvReader.Read()
-	if err == io.EOF {	///getDir", "/newNonce", "/newAccount", "/newOrder", "/authZ", "/chalZ", "/authZ",
+	if err == io.EOF {///getDir", "/newNonce", "/newAccount", "/newOrder", "/authZ", "/chalZ", "/authZ",
 		toWrite = []string{"ContextEndpoint", "Alloc (MiB)", "TotalAlloc (MiB)", "Sys (MiB)"}
 		if err := csvwriter.Write(toWrite); err != nil {
 			log.Fatalf("error writing record to file. err: %s", err)
 		}
 	}
-	
-	toWrite = []string{ctx, strconv.FormatUint( bToMb(m.Alloc),10), strconv.FormatUint(bToMb(m.TotalAlloc),10), strconv.FormatUint(bToMb(m.Sys),10)}
-	
+
+	toWrite = []string{ctx, strconv.FormatUint(bToMb(m.Alloc),10), strconv.FormatUint(bToMb(m.TotalAlloc),10), strconv.FormatUint(bToMb(m.Sys), 10)}
+
 	if err := csvwriter.Write(toWrite); err != nil {
 		log.Fatalln("error writing record to file", err)
 	}
-	
+
 	csvwriter.Flush()
 	csvFile.Close()
 }
 
 func bToMb(b uint64) uint64 {
-    return b / 1024 / 1024
+	return b / 1024 / 1024
 }
