@@ -60,7 +60,7 @@
             "--pqorderroot", "Dilithium2",
             "-pqorderissuer", "Dilithium2", 
             "-pqorderport", "10003",
-            "-rootdir", "/home/vvc/Desktop/LabSec/codes/acme-pqc/tests/root_ca"] 
+            "-rootdir", "/home/vvc/Desktop/codes/acme-pqc/tests/root_ca"] 
         },
         
 
